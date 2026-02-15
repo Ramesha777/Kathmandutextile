@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users collection: own document or admin can read/write any user
+    match /users/{userId} {
+      allow read, write: if request.auth != null
+        && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Payment rates: admin only
+    match /rates_machineOperators/{id} {
+      allow read, write: if request.auth != null && isAdmin();
+    }
+    match /rates_productions/{id} {
+      allow read, write: if request.auth != null && isAdmin();
+    }
+    match /rates_daily/{id} {
+      allow read, write: if request.auth != null && isAdmin();
+    }
+
+    // Inventory: authenticated users can create and read
+    match /inventory/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    // Problem reports: authenticated users can create and read
+    match /problem_reports/{id} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+  }
+}

@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kathmandu Textile — Payroll & Payslip v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- jsPDF CDN for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a; /* slate-900 */
+      --panel: #111827; /* gray-900 */
+      --muted: #94a3b8; /* slate-400 */
+      --text: #e5e7eb; /* gray-200 */
+      --accent: #22d3ee; /* cyan-400 */
+      --accent-2: #8b5cf6; /* violet-500 */
+      --success: #10b981; /* emerald-500 */
+      --danger: #ef4444;  /* red-500 */
+      --warning: #f59e0b; /* amber-500 */
+      --card: #0b1220;
+      --ring: rgba(34, 211, 238, 0.4);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 700px at 80% -10%, rgba(139,92,246,0.15), transparent 40%),
+                  radial-gradient(1000px 600px at -10% 10%, rgba(34,211,238,0.15), transparent 40%),
+                  var(--bg);
+      color: var(--text);
+    }
+    a { color: var(--accent); text-decoration: none; }
+    .container {
+      max-width: 1200px; margin: 0 auto; padding: 24px;
+    }
+    /* ---------- Auth Card ---------- */
+    .center { min-height: 100dvh; display: grid; place-items: center; }
+    .card {
+      width: 100%; max-width: 420px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 24px; padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .brand {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+    }
+    .brand .logo {
+      width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #001019; font-weight: 800;
+      box-shadow: 0 8px 24px rgba(139,92,246,0.35);
+    }
+    .muted { color: var(--muted); }
+    .input {
+      width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.25);
+      background: #0b1220; color: var(--text);
+      outline: none; transition: box-shadow .2s ease, border-color .2s ease;
+    }
+    .input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 14px; border-radius: 12px; border: 1px solid transparent; cursor: pointer;
+      color: #001019; font-weight: 600; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 10px 24px rgba(34,211,238,0.25);
+    }
+    .btn.ghost { background: transparent; color: var(--text); border-color: rgba(148,163,184,0.25); }
+    .btn.small { padding: 8px 12px; border-radius: 10px; font-size: 14px; }
+    .btn.danger { background: var(--danger); box-shadow: 0 10px 24px rgba(239, 68, 68, 0.25); color: white; }
+
+    /* ---------- App Shell ---------- */
+    .app { display: none; }
+    .shell { display: grid; grid-template-columns: 260px 1fr; gap: 20px; min-height: 100dvh; }
+    .sidebar {
+      position: sticky; top: 0; height: 100dvh; padding: 22px; border-right: 1px solid rgba(255,255,255,0.06);
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+    }
+    .sidebar h2 { margin: 8px 0 4px; font-size: 16px; color: #e6f8fb; }
+    .nav { display: grid; gap: 8px; margin-top: 16px; }
+    .nav .item { padding: 10px 12px; border-radius: 12px; color: var(--text); cursor: pointer; border: 1px solid transparent; }
+    .nav .item:hover { background: rgba(148,163,184,0.08); }
+    .nav .item.active { background: rgba(34,211,238,0.12); border-color: rgba(34,211,238,0.35); }
+
+    .main { padding: 24px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .cards { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+    .card2 {
+      grid-column: span 12; padding: 16px; border-radius: 18px; border: 1px solid rgba(255,255,255,0.06);
+      background: var(--card);
+    }
+    @media (min-width: 900px) {
+      .card2.span-4 { grid-column: span 4; }
+      .card2.span-6 { grid-column: span 6; }
+      .card2.span-8 { grid-column: span 8; }
+      .card2.span-12 { grid-column: span 12; }
+    }
+
+    .grid { display: grid; gap: 12px; }
+    .grid.cols-2 { grid-template-columns: 1fr; }
+    .grid.cols-3 { grid-template-columns: 1fr; }
+    .grid.cols-4 { grid-template-columns: 1fr; }
+    @media (min-width: 600px) {
+        .grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 900px) {
+      .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+      .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+      .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.15); }
+    th { color: #dbeafe; font-weight: 600; }
+    tr:hover td { background: rgba(148,163,184,0.05); }
+
+    .pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius: 999px; background: rgba(34,211,238,0.12); border: 1px solid rgba(34,211,238,0.35); color: #cffafe; font-size: 12px; }
+    .pill.success { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #a7f3d0; }
+
+    .hint { font-size: 12px; color: var(--muted); }
+    .divider { height: 1px; background: rgba(148,163,184,0.18); margin: 10px 0 16px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+    .right { margin-left: auto; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .sub-nav { display: flex; gap: 8px; border-bottom: 1px solid rgba(148,163,184,0.15); margin-bottom: 16px; }
+    .sub-nav .item { padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; }
+    .sub-nav .item.active { border-bottom-color: var(--accent); color: var(--accent); }
+
+    /* ---------- Toast/Notification ---------- */
+    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
+    .toast {
+        padding: 14px 18px; border-radius: 12px;
+        color: var(--text);
+        box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        opacity: 0;
+        transform: translateX(100%);
+        transition: all 0.4s ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(0); }
+    .toast.success { background: var(--success); }
+    .toast.error { background: var(--danger); }
+
+  </style>
+</head>
+<body>
+  <!-- ############ NOTIFICATION CONTAINER ############ -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- ############ LOGIN ############ -->
+  <section id="auth" class="center">
+    <div class="card">
+      <div class="brand">
+        <div class="logo">KT</div>
+        <div>
+          <div style="font-weight:700; font-size:18px">Kathmandu Textile Industry</div>
+          <div class="muted" style="font-size:13px">Tarekeshwar-7, Phutung, Kathmandu</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <h3 style="margin:8px 0 2px">Sign in</h3>
+      <p class="muted" style="margin:0 0 14px">Use demo: <span class="pill">admin / admin</span></p>
+      <div class="grid">
+        <label>
+          <div class="hint">Username</div>
+          <input id="login-user" class="input" placeholder="Enter username" />
+        </label>
+        <label>
+          <div class="hint">Password</div>
+          <input id="login-pass" type="password" class="input" placeholder="••••••••" />
+        </label>
+        <button id="btn-login" class="btn">Login</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ############ APP ############ -->
+  <section id="app" class="app">
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand" style="margin-bottom:14px">
+          <div class="logo">KT</div>
+          <div>
+            <div style="font-weight:700; font-size:16px">Kathmandu Textile</div>
+            <div class="muted" style="font-size:12px">Payroll & Payslip</div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="grid" style="gap:6px; margin-bottom:12px">
+          <div class="hint">Signed in as</div>
+          <div id="whoami" class="pill">—</div>
+        </div>
+        <nav class="nav">
+          <div data-tab="dashboard" class="item active">🏠 Dashboard</div>
+          <div data-tab="wages" class="item">🧾 Wage Entry</div>
+          <div data-tab="payslip" class="item">📄 Payslip Generator</div>
+          <div data-tab="employees" class="item">👥 Employees</div>
+          <div data-tab="rates" class="item">💰 Rate Management</div>
+          <div data-tab="reports" class="item">📊 Reports</div>
+        </nav>
+        <div class="divider"></div>
+        <div class="grid" style="gap:10px">
+          <button id="btn-logout" class="btn ghost">Log out</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="toolbar">
+          <h2 id="tab-title">Dashboard</h2>
+          <div class="row right">
+            <span class="pill" id="stats-emps">0 Employees</span>
+            <span class="pill" id="stats-entries">0 Entries</span>
+          </div>
+        </div>
+
+        <!-- DASHBOARD -->
+        <section data-view="dashboard" class="view active">
+          <div class="cards">
+            <div class="card2 span-4">
+              <h3 style="margin:0 0 10px">Quick Add — Employee</h3>
+              <div class="grid">
+                <label>
+                  <div class="hint">Employee ID (Barcode Scan)</div>
+                  <input id="emp-id" class="input" placeholder="e.g., KT-007" />
+                </label>
+                 <label>
+                  <div class="hint">Full name</div>
+                  <input id="emp-name" class="input" placeholder="e.g., Ram Bahadur" />
+                </label>
+                <label>
+                  <div class="hint">Role</div>
+                   <select id="emp-role" class="input">
+                    <option>Worker</option>
+                    <option>Supervisor</option>
+                    <option>Admin</option>
+                  </select>
+                </label>
+                <label>
+                  <div class="hint">Username (Optional)</div>
+                  <input id="emp-user" class="input" placeholder="ram123" />
+                </label>
+                <label>
+                  <div class="hint">Password (Optional)</div>
+                  <input id="emp-pass" type="password" class="input" placeholder="Set a password" />
+                </label>
+                <button id="btn-add-emp" class="btn">Add Employee</button>
+              </div>
+            </div>
+
+            <div class="card2 span-8">
+              <h3 style="margin:0 0 10px">Recent Wage Entries</h3>
+              <div style="overflow:auto">
+                <table id="tbl-recent">
+                  <thead>
+                    <tr>
+                      <th>Date</th><th>Employee</th><th>Dept</th><th>Item</th>
+                      <th>Qty</th><th>Rate</th><th>OT(hrs)</th><th>Bonus</th><th>Deduction</th><th>Net</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- WAGES ENTRY -->
+        <section data-view="wages" class="view">
+          <div class="card2 span-12">
+            <h3 style="margin:0 0 10px">Wage Entry</h3>
+            <div class="grid cols-4">
+              <label>
+                <div class="hint">Date</div>
+                <input id="w_date" type="date" class="input" />
+              </label>
+              <label>
+                <div class="hint">Employee Name</div>
+                <input id="w_emp" list="list-emps" class="input" placeholder="Start typing..." />
+                <datalist id="list-emps"></datalist>
+              </label>
+              <label>
+                <div class="hint">Employee ID</div>
+                <input id="w_empId" class="input" readonly />
+              </label>
+              <label>
+                <div class="hint">Department</div>
+                 <select id="w_dept" class="input">
+                   <option value="">Select Department</option>
+                   <option>Industry</option>
+                   <option>Production</option>
+                   <option>Daily</option>
+                </select>
+              </label>
+              <label>
+                <div class="hint">Work Item</div>
+                <select id="w_item" class="input"></select>
+              </label>
+              <label>
+                <div class="hint">Rate (Rs)</div>
+                <input id="w_rate" type="number" step="0.01" min="0" class="input" readonly />
+              </label>
+               <label>
+                <div class="hint">Quantity</div>
+                <input id="w_qty" type="number" step="1" min="0" class="input" />
+              </label>
+              <label>
+                <div class="hint">Overtime (hrs)</div>
+                <input id="w_ot" type="number" step="0.1" min="0" class="input" />
+              </label>
+              <label>
+                <div class="hint">Bonus (Rs)</div>
+                <input id="w_bonus" type="number" step="0.01" min="0" class="input" />
+              </label>
+              <label>
+                <div class="hint">Deduction (Rs)</div>
+                <input id="w_deduct" type="number" step="0.01" min="0" class="input" />
+              </label>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <button id="btn-save-wage" class="btn">Save Entry</button>
+              <button id="btn-clear-wage" class="btn ghost">Clear</button>
+            </div>
+          </div>
+
+          <div class="card2 span-12" style="margin-top:16px">
+            <div class="row" style="justify-content: space-between">
+              <h3 style="margin:0">All Entries</h3>
+              <div class="row">
+                <input id="filter-text" class="input" placeholder="Filter by employee name or ID" style="width:260px" />
+                <button id="btn-export-csv" class="btn small ghost">Export CSV</button>
+              </div>
+            </div>
+            <div style="overflow:auto; margin-top:10px">
+              <table id="tbl-all">
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Employee</th><th>Emp ID</th><th>Item</th>
+                    <th>Qty</th><th>Rate</th><th>Wages</th><th>OT(hrs)</th><th>OT Pay</th>
+                    <th>Bonus</th><th>Deduction</th><th>Net</th><th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- PAYSLIP -->
+        <section data-view="payslip" class="view">
+          <div class="cards">
+            <div class="card2 span-6">
+              <h3 style="margin:0 0 10px">Payslip Parameters</h3>
+              <div class="grid cols-2">
+                <label>
+                  <div class="hint">Employee (Name or ID)</div>
+                  <input id="p_emp" list="list-emps-2" class="input" placeholder="Employee name or ID" />
+                  <datalist id="list-emps-2"></datalist>
+                </label>
+                <label>
+                  <div class="hint">Month</div>
+                  <select id="p_month" class="input">
+                    <option value="">Select month</option>
+                    <option>January</option><option>February</option><option>March</option><option>April</option>
+                    <option>May</option><option>June</option><option>July</option><option>August</option>
+                    <option>September</option><option>October</option><option>November</option><option>December</option>
+                  </select>
+                </label>
+                <label>
+                  <div class="hint">Company Logo (optional)</div>
+                  <input id="p_logo" type="file" accept="image/*" class="input" />
+                </label>
+                <label>
+                  <div class="hint">Signature Image (optional)</div>
+                  <input id="p_sign" type="file" accept="image/*" class="input" />
+                </label>
+              </div>
+              <div class="row" style="margin-top:12px">
+                <button id="btn-preview" class="btn">Preview</button>
+                <button id="btn-download" class="btn ghost">Download PDF</button>
+                <button id="btn-download-all" class="btn ghost">Download All (Month)</button>
+              </div>
+            </div>
+
+            <div class="card2 span-6">
+              <h3 style="margin:0 0 10px">Summary</h3>
+              <div id="summary" class="grid" style="gap:6px">
+                <div class="muted">Fill parameters and click <b>Preview</b>.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- EMPLOYEES -->
+        <section data-view="employees" class="view">
+          <div class="card2 span-12">
+            <h3 style="margin:0">All Employees</h3>
+            <div style="overflow:auto; margin-top:10px">
+              <table id="tbl-emps">
+                <thead>
+                  <tr><th>Emp ID</th><th>Name</th><th>Role</th><th>Username</th><th></th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        
+        <!-- RATE MANAGEMENT -->
+        <section data-view="rates" class="view">
+            <nav class="sub-nav" id="rates-nav">
+                <div class="item active" data-rate-tab="industry">Industry (Fibre)</div>
+                <div class="item" data-rate-tab="production">Production (Cloth)</div>
+                <div class="item" data-rate-tab="daily">Daily Wage</div>
+            </nav>
+
+            <!-- Industry Rates -->
+            <div class="rate-view active" data-rate-view="industry">
+                <div class="card2">
+                    <h3 style="margin-top:0">Add New Fibre Rate</h3>
+                    <div class="grid cols-3">
+                        <input id="rate-dept-industry" type="hidden" value="Industry">
+                        <label><div class="hint">Fibre Name</div><input id="rate-name-industry" class="input" placeholder="e.g., Cotton"></label>
+                        <label><div class="hint">Rate (per unit)</div><input id="rate-value-industry" type="number" step="0.01" class="input" placeholder="e.g., 150.50"></label>
+                        <button id="btn-add-rate-industry" class="btn" style="align-self:end">Add Rate</button>
+                    </div>
+                    <div class="divider"></div>
+                    <h3 style="margin-top:0">Existing Fibre Rates</h3>
+                    <table id="tbl-rates-industry">
+                        <thead><tr><th>Fibre</th><th>Rate</th><th></th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Production Rates -->
+            <div class="rate-view" data-rate-view="production">
+                <div class="card2">
+                    <h3 style="margin-top:0">Add New Cloth Rate</h3>
+                    <div class="grid cols-3">
+                        <input id="rate-dept-production" type="hidden" value="Production">
+                        <label><div class="hint">Cloth Type</div><input id="rate-name-production" class="input" placeholder="e.g., Dhaka"></label>
+                        <label><div class="hint">Rate (per unit)</div><input id="rate-value-production" type="number" step="0.01" class="input" placeholder="e.g., 500.00"></label>
+                        <button id="btn-add-rate-production" class="btn" style="align-self:end">Add Rate</button>
+                    </div>
+                    <div class="divider"></div>
+                    <h3 style="margin-top:0">Existing Cloth Rates</h3>
+                    <table id="tbl-rates-production">
+                        <thead><tr><th>Cloth</th><th>Rate</th><th></th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Daily Rates -->
+            <div class="rate-view" data-rate-view="daily">
+                <div class="card2">
+                    <h3 style="margin-top:0">Set Daily Wage</h3>
+                     <div class="grid cols-3">
+                        <input id="rate-dept-daily" type="hidden" value="Daily">
+                        <input id="rate-name-daily" type="hidden" value="Daily Wage">
+                        <label><div class="hint">Daily Wage Rate (Rs)</div><input id="rate-value-daily" type="number" step="0.01" class="input" placeholder="e.g., 1200.00"></label>
+                        <button id="btn-add-rate-daily" class="btn" style="align-self:end">Set Rate</button>
+                    </div>
+                    <div class="divider"></div>
+                    <h3 style="margin-top:0">Current Daily Wage</h3>
+                    <table id="tbl-rates-daily">
+                        <thead><tr><th>Item</th><th>Rate</th><th></th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+        
+        <!-- REPORTS -->
+        <section data-view="reports" class="view">
+             <div class="cards">
+                <div class="card2 span-6">
+                    <h3 style="margin:0 0 10px">Production Summary</h3>
+                    <p class="hint">Total quantity produced for each item across all departments.</p>
+                    <div style="overflow:auto">
+                        <table id="tbl-report-prod">
+                            <thead><tr><th>Item</th><th>Total Quantity</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                 <div class="card2 span-6">
+                    <h3 style="margin:0 0 10px">Fibre Usage</h3>
+                    <p class="hint">Total quantity of each fibre used from the 'Industry' department.</p>
+                    <div style="overflow:auto">
+                        <table id="tbl-report-fibre">
+                             <thead><tr><th>Fibre</th><th>Total Quantity Used</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+      </main>
+    </div>
+  </section>
+
+  <script>
+    /******************** UTIL ********************/
+    const $ = (sel, root = document) => root.querySelector(sel);
+    const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+    const fmt = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const monthName = (dStr) => {
+      if (!dStr) return ""; // dStr in format YYYY-MM-DD
+      const [y, m, day] = dStr.split("-").map(Number);
+      const d = new Date(y, (m || 1) - 1, day || 1);
+      return d.toLocaleString(undefined, { month: 'long' });
+    }
+
+    const Toast = {
+        show(message, type = 'success') {
+            const container = $('#toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                toast.addEventListener('transitionend', () => toast.remove());
+            }, 3000);
+        }
+    };
+    
+    /******************** DB HELPER ********************/
+    const DB_NAME = 'KathmanduTextileDB';
+    const DB_VERSION = 1;
+    let db;
+
+    function initDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+            request.onupgradeneeded = (event) => {
+                const dbInstance = event.target.result;
+                if (!dbInstance.objectStoreNames.contains('employees')) {
+                    dbInstance.createObjectStore('employees', { keyPath: 'id' });
+                }
+                if (!dbInstance.objectStoreNames.contains('wages')) {
+                     dbInstance.createObjectStore('wages', { keyPath: 'id', autoIncrement: true });
+                }
+                 if (!dbInstance.objectStoreNames.contains('rates')) {
+                    dbInstance.createObjectStore('rates', { keyPath: 'id', autoIncrement: true });
+                }
+            };
+
+            request.onsuccess = (event) => {
+                db = event.target.result;
+                console.log('Database initialized');
+                resolve(db);
+            };
+
+            request.onerror = (event) => {
+                console.error('Database error:', event.target.errorCode);
+                reject(event.target.errorCode);
+            };
+        });
+    }
+    
+    function dbAction(storeName, mode, action, data) {
+        return new Promise((resolve, reject) => {
+            if (!db) {
+                reject("DB not initialized");
+                return;
+            }
+            const transaction = db.transaction(storeName, mode);
+            const store = transaction.objectStore(storeName);
+            let request;
+
+            switch (action) {
+                case 'add': request = store.add(data); break;
+                case 'put': request = store.put(data); break;
+                case 'delete': request = store.delete(data); break;
+                case 'getAll': request = store.getAll(); break;
+                case 'get': request = store.get(data); break;
+                default: reject('Invalid action'); return;
+            }
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
+
+    /******************** STATE ********************/
+    let employees = [];
+    let wages = [];
+    let rates = [];
+    let currentUser = null;
+
+    async function loadInitialData() {
+        employees = await dbAction('employees', 'readonly', 'getAll');
+        wages = await dbAction('wages', 'readonly', 'getAll');
+        rates = await dbAction('rates', 'readonly', 'getAll');
+        
+        // Seed initial admin if no users exist
+        if (employees.length === 0) {
+            const admin = { id: 'admin', name: 'Administrator', role: 'Admin', user: 'admin', pass: 'admin' };
+            await dbAction('employees', 'readwrite', 'add', admin);
+            employees.push(admin);
+        }
+    }
+    
+    async function refreshAll() {
+        await loadInitialData();
+        renderAllUI();
+    }
+    
+    function renderAllUI() {
+        buildEmployeeLists();
+        renderRecentWages();
+        renderAllWages();
+        renderEmployees();
+        renderAllRates();
+        updateStats();
+        generateReports();
+    }
+    
+
+    /******************** AUTH ********************/
+    const authSec = $('#auth');
+    const appSec = $('#app');
+
+    $('#btn-login').addEventListener('click', async () => {
+      const u = $('#login-user').value.trim();
+      const p = $('#login-pass').value.trim();
+      const found = employees.find(x => x.user === u && x.pass === p);
+      if (!found) { Toast.show('Invalid username or password', 'error'); return; }
+      
+      currentUser = found;
+      $('#whoami').textContent = `${found.name} (${found.role})`;
+      authSec.style.display = 'none';
+      appSec.style.display = 'block';
+      
+      renderAllUI();
+    });
+
+    $('#btn-logout').addEventListener('click', () => { location.reload(); });
+
+    /******************** NAV ********************/
+    $$('.nav .item').forEach(item => item.addEventListener('click', () => {
+        const tab = item.getAttribute('data-tab');
+        $$('.nav .item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        
+        $('#tab-title').textContent = item.textContent.replace(/^[^A-Za-z]+\s*/, '');
+        $$('.view').forEach(v => v.classList.toggle('active', v.getAttribute('data-view') === tab));
+    }));
+    
+    $('#rates-nav').addEventListener('click', (e) => {
+        const target = e.target.closest('.item');
+        if (!target) return;
+        
+        const tab = target.dataset.rateTab;
+        $$('#rates-nav .item').forEach(i => i.classList.remove('active'));
+        target.classList.add('active');
+        $$('.rate-view').forEach(v => v.classList.toggle('active', v.dataset.rateView === tab));
+    });
+
+    /******************** DASHBOARD — Quick Add Employee ********************/
+    $('#btn-add-emp').addEventListener('click', async () => {
+      const id = $('#emp-id').value.trim();
+      const name = $('#emp-name').value.trim();
+      const role = $('#emp-role').value;
+      const user = $('#emp-user').value.trim();
+      const pass = $('#emp-pass').value.trim();
+      
+      if (!id || !name) { Toast.show('Employee ID and Name are required.', 'error'); return; }
+      if (employees.some(e => e.id === id)) { Toast.show('Employee ID already exists.', 'error'); return; }
+      
+      const newEmployee = { id, name, role, user, pass };
+      await dbAction('employees', 'readwrite', 'add', newEmployee);
+      
+      Toast.show('Employee added successfully.');
+      $('#emp-id').value = $('#emp-name').value = $('#emp-user').value = $('#emp-pass').value = '';
+      
+      await refreshAll();
+    });
+    
+    function renderRecentWages(){
+      const tbody = $('#tbl-recent tbody');
+      tbody.innerHTML = '';
+      wages.slice(-8).reverse().forEach(e => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${e.date}</td><td>${e.emp}</td><td>${e.dept}</td><td>${e.item}</td>
+            <td>${e.qty}</td><td>${fmt(e.rate)}</td><td>${e.ot}</td>
+            <td>${fmt(e.bonus)}</td><td>${fmt(e.deduct)}</td><td>${fmt(e.net)}</td>`;
+          tbody.appendChild(tr);
+      });
+    }
+
+    function updateStats(){
+      $('#stats-emps').textContent = `${employees.length} Employees`;
+      $('#stats-entries').textContent = `${wages.length} Entries`;
+    }
+
+    /******************** WAGES ********************/
+    function buildEmployeeLists(){
+      const dl1 = $('#list-emps');
+      const dl2 = $('#list-emps-2');
+      [dl1, dl2].forEach(dl => {
+          dl.innerHTML = '';
+          employees.forEach(u => {
+            const o = document.createElement('option'); o.value = u.name;
+            o.dataset.id = u.id;
+            dl.appendChild(o);
+          });
+      });
+    }
+    
+    $('#w_emp').addEventListener('input', (e) => {
+        const name = e.target.value;
+        const employee = employees.find(emp => emp.name === name);
+        $('#w_empId').value = employee ? employee.id : '';
+    });
+    
+    $('#w_dept').addEventListener('change', (e) => {
+        const dept = e.target.value;
+        const itemsForDept = rates.filter(r => r.dept === dept);
+        const itemSelect = $('#w_item');
+        itemSelect.innerHTML = '<option value="">Select Item</option>';
+        itemsForDept.forEach(rate => {
+            const o = document.createElement('option');
+            o.value = rate.name;
+            o.dataset.rate = rate.value;
+            o.textContent = rate.name;
+            itemSelect.appendChild(o);
+        });
+        $('#w_rate').value = '';
+    });
+    
+     $('#w_item').addEventListener('change', (e) => {
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        $('#w_rate').value = selectedOption.dataset.rate || '';
+    });
+
+    function clearWageForm(){
+      ['w_date','w_emp','w_empId','w_dept','w_item','w_qty','w_rate','w_ot','w_bonus','w_deduct'].forEach(id => { $('#'+id).value=''; });
+    }
+
+    $('#btn-clear-wage').addEventListener('click', clearWageForm);
+
+    $('#btn-save-wage').addEventListener('click', async () => {
+      const date = $('#w_date').value;
+      const emp  = $('#w_emp').value.trim();
+      const empId = $('#w_empId').value.trim();
+      const dept = $('#w_dept').value;
+      const item = $('#w_item').value;
+      const qty  = Number($('#w_qty').value || 0);
+      const rate = Number($('#w_rate').value || 0);
+      const ot   = Number($('#w_ot').value || 0);
+      const bonus= Number($('#w_bonus').value || 0);
+      const deduct=Number($('#w_deduct').value || 0);
+      
+      if (!date || !emp || !empId) { Toast.show('Date and Employee are required.', 'error'); return; }
+      
+      const wagesVal = qty * rate;
+      const otPay = ot * (rate / 8) * 1.5; // Example: 1.5x hourly rate (assuming 8hr day)
+      const net   = wagesVal + otPay + bonus - deduct;
+      const rec = { date, emp, empId, dept, item, qty, rate, wages: wagesVal, ot, otPay, bonus, deduct, net };
+      
+      await dbAction('wages', 'readwrite', 'add', rec);
+      
+      Toast.show('Wage entry saved.');
+      clearWageForm();
+      await refreshAll();
+    });
+
+    function renderAllWages(){
+      const tbody = $('#tbl-all tbody');
+      const q = ($('#filter-text').value||'').toLowerCase();
+      tbody.innerHTML = '';
+      wages
+        .filter(e => !q || `${e.emp} ${e.empId}`.toLowerCase().includes(q))
+        .slice().reverse()
+        .forEach(e => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${e.date}</td><td>${e.emp}</td><td>${e.empId}</td><td>${e.item}</td>
+                <td>${e.qty}</td><td>${fmt(e.rate)}</td><td>${fmt(e.wages)}</td><td>${e.ot}</td><td>${fmt(e.otPay)}</td>
+                <td>${fmt(e.bonus)}</td><td>${fmt(e.deduct)}</td><td>${fmt(e.net)}</td>
+                <td><button class="btn small danger" data-del="${e.id}">Del</button></td>`;
+             tbody.appendChild(tr);
+        });
+    }
+
+    $('#tbl-all').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-del]');
+      if (!btn) return;
+      const id = Number(btn.getAttribute('data-del'));
+      if (confirm('Delete this entry?')){
+        await dbAction('wages', 'readwrite', 'delete', id);
+        Toast.show('Entry deleted.');
+        await refreshAll();
+      }
+    });
+
+    $('#filter-text').addEventListener('input', renderAllWages);
+    
+    function exportWagesToCSV() {
+        if (wages.length === 0) {
+            Toast.show('No wage entries to export.', 'error');
+            return;
+        }
+
+        const headers = [ "Date", "Employee Name", "Employee ID", "Department", "Work Item", "Quantity", "Rate", "Wages", "OT (hrs)", "OT Pay", "Bonus", "Deduction", "Net Pay" ];
+        const rows = wages.map(e => [ e.date, e.emp, e.empId, e.dept, e.item, e.qty, e.rate, e.wages, e.ot, e.otPay, e.bonus, e.deduct, e.net ]);
+        let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(r => r.join(",")).join("\n");
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        const date = new Date().toISOString().slice(0, 10);
+        link.setAttribute("download", `payroll_wages_${date}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        Toast.show('CSV export started.');
+    }
+    $('#btn-export-csv').addEventListener('click', exportWagesToCSV);
+    
+    /******************** RATE MANAGEMENT ********************/
+    function setupRateButton(dept) {
+        $(`#btn-add-rate-${dept.toLowerCase()}`).addEventListener('click', async () => {
+            const name = $(`#rate-name-${dept.toLowerCase()}`).value.trim();
+            const value = Number($(`#rate-value-${dept.toLowerCase()}`).value);
+            if (!name || !value) { Toast.show('Name and rate value are required.', 'error'); return; }
+
+            // For Daily, we overwrite the existing rate.
+            if (dept === 'Daily') {
+                const existing = rates.find(r => r.dept === 'Daily');
+                if (existing) {
+                    await dbAction('rates', 'readwrite', 'delete', existing.id);
+                }
+            }
+
+            await dbAction('rates', 'readwrite', 'add', { dept, name, value });
+            Toast.show('Rate saved.');
+            $(`#rate-name-${dept.toLowerCase()}`).value = '';
+            $(`#rate-value-${dept.toLowerCase()}`).value = '';
+            await refreshAll();
+        });
+    }
+
+    setupRateButton('Industry');
+    setupRateButton('Production');
+    setupRateButton('Daily');
+    
+    function renderAllRates() {
+        ['Industry', 'Production', 'Daily'].forEach(dept => {
+            const tbody = $(`#tbl-rates-${dept.toLowerCase()} tbody`);
+            tbody.innerHTML = '';
+            rates.filter(r => r.dept === dept).forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.name}</td><td>${fmt(r.value)}</td>
+                    <td><button class="btn small danger" data-del-rate="${r.id}">Del</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        });
+    }
+    
+    document.body.addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-del-rate]');
+        if (!btn) return;
+        const id = Number(btn.dataset.delRate);
+        if (confirm('Delete this rate?')) {
+            await dbAction('rates', 'readwrite', 'delete', id);
+            Toast.show('Rate deleted.');
+            await refreshAll();
+        }
+    });
+
+    /******************** REPORTS ********************/
+    function generateReports() {
+        // Production Report
+        const prodSummary = wages.reduce((acc, curr) => {
+            acc[curr.item] = (acc[curr.item] || 0) + curr.qty;
+            return acc;
+        }, {});
+        
+        const prodTbody = $('#tbl-report-prod tbody');
+        prodTbody.innerHTML = '';
+        for (const item in prodSummary) {
+            prodTbody.innerHTML += `<tr><td>${item}</td><td>${prodSummary[item]}</td></tr>`;
+        }
+
+        // Fibre Usage Report
+        const fibreSummary = wages.filter(w => w.dept === 'Industry').reduce((acc, curr) => {
+            acc[curr.item] = (acc[curr.item] || 0) + curr.qty;
+            return acc;
+        }, {});
+        
+        const fibreTbody = $('#tbl-report-fibre tbody');
+        fibreTbody.innerHTML = '';
+        for (const item in fibreSummary) {
+            fibreTbody.innerHTML += `<tr><td>${item}</td><td>${fibreSummary[item]}</td></tr>`;
+        }
+    }
+    
+    /******************** PAYSLIP ********************/
+    function calcPayslip(empIdentifier, month){
+      const employee = employees.find(e => e.name === empIdentifier || e.id === empIdentifier);
+      if (!employee) return null;
+      
+      let totalW=0, totalHrs=0, totalOtPay=0, totalB=0, totalD=0, hasEntries = false;
+      
+      wages.forEach(e => {
+        if (e.empId === employee.id && monthName(e.date) === month){
+          hasEntries = true;
+          totalW += Number(e.wages||0);
+          totalHrs += Number(e.ot||0);
+          totalOtPay += Number(e.otPay||0);
+          totalB += Number(e.bonus||0);
+          totalD += Number(e.deduct||0);
+        }
+      });
+      
+      if (!hasEntries) return null;
+      
+      const net = totalW + totalOtPay + totalB - totalD;
+      return { totalW, totalHrs, totalOtPay, totalB, totalD, net, empName: employee.name };
+    }
+
+    function renderSummary(empName, month, calc){
+      const box = $('#summary');
+      if (!calc){ box.innerHTML = '<div class="muted">No data for selection.</div>'; return; }
+      box.innerHTML = `
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap:8px">
+          <div><div class="hint">Employee</div><div><b>${empName}</b></div></div>
+          <div><div class="hint">Month</div><div><b>${month}</b></div></div>
+          <div><div class="hint">Wages</div><div>Rs. ${fmt(calc.totalW)}</div></div>
+          <div><div class="hint">Overtime</div><div>${fmt(calc.totalHrs)} hrs (Rs. ${fmt(calc.totalOtPay)})</div></div>
+          <div><div class="hint">Bonus</div><div>Rs. ${fmt(calc.totalB)}</div></div>
+          <div><div class="hint">Deduction</div><div>Rs. ${fmt(calc.totalD)}</div></div>
+          <div style="grid-column: 1 / -1; height:1px; background: rgba(148,163,184,0.15);"></div>
+          <div style="grid-column: 1 / -1"><div class="hint">Net Pay</div><div style="font-size:22px; font-weight:700">Rs. ${fmt(calc.net)}</div></div>
+        </div>`;
+    }
+
+    async function readAsDataURL(input){
+      return new Promise((res) => {
+        const f = input.files && input.files[0];
+        if (!f) return res(null);
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.readAsDataURL(f);
+      });
+    }
+
+    $('#btn-preview').addEventListener('click', async () => {
+      const emp = $('#p_emp').value.trim();
+      const month = $('#p_month').value;
+      if (!emp || !month) { Toast.show('Select employee and month', 'error'); return; }
+      const calc = calcPayslip(emp, month);
+      renderSummary(calc ? calc.empName : emp, month, calc);
+    });
+
+    $('#btn-download').addEventListener('click', async () => {
+      const empIdentifier = $('#p_emp').value.trim();
+      const month = $('#p_month').value;
+      if (!empIdentifier || !month) { Toast.show('Select employee and month', 'error'); return; }
+      const calc = calcPayslip(empIdentifier, month);
+      if (!calc) { Toast.show('No data to generate payslip.', 'error'); return; }
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit:'pt', format:'a4' });
+      
+      calc.month = month;
+      await drawPayslipPage(doc, calc, await readAsDataURL($('#p_logo')), await readAsDataURL($('#p_sign')));
+
+      doc.save(`Payslip_${calc.empName}_${month}.pdf`);
+    });
+    
+    async function drawPayslipPage(doc, calc, logoData, signData) {
+        const W = doc.internal.pageSize.getWidth();
+        const H = doc.internal.pageSize.getHeight();
+
+        if (logoData) { try { doc.addImage(logoData, 'PNG', 40, 34, 60, 60); } catch {} }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+        doc.text('Kathmandu Textile Industry', 120, 60);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+        doc.text('Tarekeshwar-7, Phutung, Kathmandu', 120, 76);
+
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+        doc.text(`PAYSLIP — ${calc.month}`, W / 2, 130, { align: 'center' });
+
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
+        doc.text(`Employee: ${calc.empName}`, 40, 165);
+        doc.text(`Month: ${calc.month}`, 40, 185);
+
+        const tableData = [
+            ['Earnings', `Rs. ${fmt(calc.totalW + calc.totalOtPay + calc.totalB)}`],
+            ['  Wages', `Rs. ${fmt(calc.totalW)}`],
+            [`  Overtime (${fmt(calc.totalHrs)} hrs)`, `Rs. ${fmt(calc.totalOtPay)}`],
+            ['  Bonus', `Rs. ${fmt(calc.totalB)}`],
+            ['Deductions', `Rs. ${fmt(calc.totalD)}`],
+        ];
+        doc.autoTable({
+            startY: 210, head: [['Description', 'Amount']], body: tableData,
+            theme: 'grid', headStyles: { fillColor: [15, 23, 42] }
+        });
+        
+        const finalY = doc.autoTable.previous.finalY;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+        doc.text(`Net Payable: Rs. ${fmt(calc.net)}`, 40, finalY + 40);
+
+        const signY = H - 140;
+        if (signData) { try { doc.addImage(signData, 'PNG', 40, signY - 40, 120, 40); } catch {} }
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+        doc.text('Authorized Signature', 40, signY);
+    }
+
+    $('#btn-download-all').addEventListener('click', async () => {
+        const month = $('#p_month').value;
+        if (!month) { Toast.show('Please select a month first.', 'error'); return; }
+        if (!confirm(`This will generate a single PDF with payslips for all employees with data in ${month}. Continue?`)) return;
+
+        Toast.show('Generating bulk payslip PDF... this may take a moment.');
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+        const logoData = await readAsDataURL($('#p_logo'));
+        const signData = await readAsDataURL($('#p_sign'));
+
+        let payslipsGenerated = 0;
+        for (const employee of employees) {
+            const calc = calcPayslip(employee.id, month);
+            if (calc) {
+                if (payslipsGenerated > 0) doc.addPage();
+                calc.month = month;
+                await drawPayslipPage(doc, calc, logoData, signData);
+                payslipsGenerated++;
+            }
+        }
+
+        if (payslipsGenerated > 0) {
+            doc.save(`All_Payslips_${month}.pdf`);
+        } else {
+            Toast.show(`No wage entries found for any employee in ${month}.`, 'error');
+        }
+    });
+
+
+    /******************** EMPLOYEES TABLE ********************/
+    function renderEmployees(){
+      const tbody = $('#tbl-emps tbody');
+      tbody.innerHTML = '';
+      employees.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${u.id}</td><td>${u.name}</td><td>${u.role}</td><td>${u.user||'N/A'}</td>
+                        <td><button class="btn small danger" data-rem-emp="${u.id}">Remove</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    $('#tbl-emps').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-rem-emp]');
+      if (!btn) return; 
+      const id = btn.dataset.remEmp;
+      if (id === 'admin') { Toast.show('Cannot remove admin user.', 'error'); return; }
+      if (confirm('Remove this employee?')){
+          await dbAction('employees', 'readwrite', 'delete', id);
+          Toast.show('Employee removed.');
+          await refreshAll();
+      }
+    });
+
+    /******************** INITIALIZE ********************/
+    window.addEventListener('DOMContentLoaded', async () => {
+        await initDB();
+        await loadInitialData();
+        // Set today's date in wage form
+        $('#w_date').valueAsDate = new Date();
+    });
+
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin | Kathmandu Textile Industry</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body class="admin-page" data-required-role="admin">
+  <div class="admin-wrap">
+    <header class="admin-header">
+      <h1>Admin Dashboard</h1>
+      <button type="button" class="btn btn-outline" id="logoutBtn">Sign Out</button>
+    </header>
+
+    <div class="admin-body">
+      <!-- Left: section list -->
+      <nav class="admin-sidebar">
+        <ul class="admin-nav">
+          <li><a href="#" class="admin-nav-link active" data-section="add-employee">Add Employee</a></li>
+          <li><a href="#" class="admin-nav-link" data-section="employees">Employees &amp; Users</a></li>
+          <li><a href="#" class="admin-nav-link" data-section="payment-rates">Payment Rates</a></li>
+        </ul>
+      </nav>
+
+      <!-- Right: section details -->
+      <main class="admin-content">
+        <div id="adminMessage" class="admin-message" style="display: none;"></div>
+
+        <section id="panel-add-employee" class="admin-panel active">
+          <h2>Add Employee</h2>
+          <p class="admin-desc">Creates a new user in Firebase Auth and Firestore. You will be signed out after adding so the new user can be created; sign in again to continue.</p>
+          <form id="addEmployeeForm" class="form-row">
+            <div class="form-group">
+              <label for="newEmail">Email</label>
+              <input type="email" id="newEmail" placeholder="employee@example.com" required autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="newPassword">Password</label>
+              <input type="password" id="newPassword" placeholder="Min 6 characters" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+              <label for="newRole">Role</label>
+              <select id="newRole" required>
+                <option value="employee">employee</option>
+                <option value="Manager">Manager</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">Add Employee</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="panel-employees" class="admin-panel">
+          <h2>Employees &amp; Users</h2>
+          <p class="admin-desc">Change role or remove access. Remove only deletes the user from this app (Firestore); to delete the Firebase Auth account use Firebase Console or a backend.</p>
+          <div id="userList"></div>
+        </section>
+
+        <section id="panel-payment-rates" class="admin-panel">
+          <h2>Payment Rates</h2>
+          <p class="admin-desc">Define rates for Machine Operators (fibres per meter), Productions (pay per product), and Daily (hourly wages). Stored in Firebase.</p>
+
+          <div class="rate-block">
+            <h3>Machine Operators</h3>
+            <p class="rate-desc">Fibre rates per meter (e.g. Cotton Rs. 4/m)</p>
+            <form id="formMachineOps" class="form-row form-row-compact">
+              <div class="form-group">
+                <label for="fibreName">Fibre name</label>
+                <input type="text" id="fibreName" placeholder="e.g. Cotton" required>
+              </div>
+              <div class="form-group">
+                <label for="fibreRate">Rate (Rs./m)</label>
+                <input type="number" id="fibreRate" placeholder="4" min="0" step="0.01" required>
+              </div>
+              <div class="form-group">
+                <button type="submit" class="btn btn-primary">Add</button>
+              </div>
+            </form>
+            <div id="listMachineOps" class="rate-list"></div>
+          </div>
+
+          <div class="rate-block">
+            <h3>Productions</h3>
+            <p class="rate-desc">Pay per product (e.g. Pant Rs. 12/piece)</p>
+            <form id="formProductions" class="form-row form-row-compact">
+              <div class="form-group">
+                <label for="productName">Product name</label>
+                <input type="text" id="productName" placeholder="e.g. Pant" required>
+              </div>
+              <div class="form-group">
+                <label for="productRate">Rate (Rs./piece)</label>
+                <input type="number" id="productRate" placeholder="12" min="0" step="0.01" required>
+              </div>
+              <div class="form-group">
+                <button type="submit" class="btn btn-primary">Add</button>
+              </div>
+            </form>
+            <div id="listProductions" class="rate-list"></div>
+          </div>
+
+          <div class="rate-block">
+            <h3>Daily Wages</h3>
+            <p class="rate-desc">Hourly wage rates (Rs./hour)</p>
+            <form id="formDaily" class="form-row form-row-compact">
+              <div class="form-group">
+                <label for="dailyLabel">Label</label>
+                <input type="text" id="dailyLabel" placeholder="e.g. Standard" required>
+              </div>
+              <div class="form-group">
+                <label for="dailyRate">Hourly rate (Rs./hr)</label>
+                <input type="number" id="dailyRate" placeholder="100" min="0" step="0.01" required>
+              </div>
+              <div class="form-group">
+                <button type="submit" class="btn btn-primary">Add</button>
+              </div>
+            </form>
+            <div id="listDaily" class="rate-list"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="auth-guard.js"></script>
+  <script type="module" src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login | Kathmandu Textile Industry</title>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="split-container">
+
+    <!-- LEFT SIDE - Branding -->
+    <div class="left-panel">
+      <h1>Kathmandu<br>Textile Industry</h1>
+      <p>Management Web Application</p>
+      <p class="slogan">Efficient • Reliable • Modern</p>
+    </div>
+
+    <!-- RIGHT SIDE - Login Form -->
+    <div class="right-panel">
+
+      <div class="form-header">
+        <h2>Welcome Back</h2>
+        <p>Please sign in to continue</p>
+      </div>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="name@example.com" required autocomplete="email"/>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"/>
+        </div>
+
+        <div class="error" id="errorMsg"></div>
+
+        <button type="submit" class="btn btn-primary" id="loginBtn">Sign In</button>
+      </form>
+  </div>
+
+  <!-- Firebase SDK v10 (modular) -->
+  <script type="module" src="script.js"></script>
+
+</body>
+</html>
