@@ -7,13 +7,14 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="employee.css">
 </head>
+<!--Employee dashboard section-->
 <body class="employee-page" data-required-role="employee">
   <div class="employee-wrap">
     <header class="employee-header">
       <h1>Employee Dashboard</h1>
       <button type="button" class="btn btn-outline" id="logoutBtn">Sign Out</button>
     </header>
-
+<!-- nav bar-->
     <div class="employee-body">
       <nav class="employee-sidebar">
         <ul class="employee-nav">
@@ -23,7 +24,9 @@
           <li><a href="#" class="employee-nav-link" data-section="damage-reports">Damage Reports</a></li>
         </ul>
       </nav>
-
+<!-- main content-->
+ <!-- Right: section details -->
+  <!-- Inventory section -->
       <main class="employee-content">
         <div id="employeeMessage" class="employee-message" style="display: none;"></div>
 
@@ -35,11 +38,13 @@
               <div class="form-group">
                 <label for="invBarcode">Barcode / ID</label>
                 <input type="text" id="invBarcode" placeholder="e.g. INV-001" required>
+
               </div>
               <div class="form-group">
                 <label for="invName">Name of product</label>
                 <input type="text" id="invName" placeholder="Product name" required>
               </div>
+
             </div>
             <div class="form-group">
               <label for="invCategory">Category</label>
@@ -50,11 +55,13 @@
                 <option value="finished product">Finished product</option>
               </select>
             </div>
+
             <div class="form-row-2">
               <div class="form-group">
                 <label for="invQty">Quantity</label>
                 <input type="number" id="invQty" placeholder="e.g. 10" min="0" step="0.01" required>
               </div>
+
               <div class="form-group">
                 <label for="invUnit">Unit</label>
                 <select id="invUnit" required>
@@ -66,27 +73,33 @@
                 </select>
               </div>
             </div>
+
             <div class="form-group">
               <label for="invVendorName">Vendor name</label>
               <input type="text" id="invVendorName" placeholder="Vendor or supplier name">
             </div>
+
             <div class="form-group">
               <label for="invVendorContact">Vendor contact</label>
               <input type="text" id="invVendorContact" placeholder="Phone or email">
             </div>
+
             <div class="form-group">
               <label for="invVendorAddress">Vendor address</label>
               <input type="text" id="invVendorAddress" placeholder="Address">
             </div>
+
             <div class="form-row-2">
               <div class="form-group">
                 <label for="invPurchaseDate">Purchase date</label>
                 <input type="date" id="invPurchaseDate">
               </div>
+
               <div class="form-group">
                 <label for="invExpiryDate">Expiry date (if any)</label>
                 <input type="date" id="invExpiryDate">
               </div>
+
             </div>
             <div class="form-group">
               <label for="invStorageArea">Storage area</label>
@@ -103,16 +116,11 @@
             </div>
             <button type="submit" class="btn btn-primary">Add to inventory</button>
           </form>
-
-          <hr style="margin: 2rem 0; border: 0; border-top: 1px solid #e5e7eb;">
-          <h2>View All Inventory</h2>
-          <p class="section-desc">All inventory items added to the system.</p>
-          <div id="inventoryList" class="emp-list"></div>
         </section>
 
         <section id="panel-report-problem" class="employee-panel">
           <h2>Report problem with product</h2>
-          <p class="section-desc">Report an issue for a product by Barcode, Name and explanation.</p>
+          <p class="section-desc">Report an issue for a product by Barcode, Name, Qty, Unit and explanation.</p>
           <form id="problemForm" class="emp-form">
             <div class="form-row-2">
               <div class="form-group">
@@ -122,6 +130,22 @@
               <div class="form-group">
                 <label for="probName">Name of product</label>
                 <input type="text" id="probName" placeholder="Product name" required>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="probQty">Quantity</label>
+                <input type="number" id="probQty" placeholder="e.g. 10" min="0" step="0.01">
+              </div>
+              <div class="form-group">
+                <label for="probUnit">Unit</label>
+                <select id="probUnit">
+                  <option value="">Select unit</option>
+                  <option value="kg">kg</option>
+                  <option value="ltr">ltr</option>
+                  <option value="meter">meter</option>
+                  <option value="piece">piece</option>
+                </select>
               </div>
             </div>
             <div class="form-group">

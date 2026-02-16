@@ -12,21 +12,23 @@ body.employee-page {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
   color: var(--dark);
-  padding: 24px;
+  padding: 0;
   display: block;
   align-items: stretch;
 }
 
 .employee-wrap {
-  max-width: 1100px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
+  padding: 2px;
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22);
+  border-radius: 22px;
+  box-shadow: none;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 85vh;
+  min-height: 100vh;
 }
 
 .employee-header {
@@ -53,8 +55,8 @@ body.employee-page {
 .employee-sidebar {
   width: 220px;
   min-width: 180px;
-  background: #f8fafc;
-  border-right: 1px solid #e2e8f0;
+  background: #7c18cf;
+  border-right: 1px solid #e4e6e9;
   padding: 1.25rem 0;
 }
 
@@ -69,7 +71,7 @@ body.employee-page {
 .employee-nav-link {
   display: block;
   padding: 0.7rem 1.25rem;
-  color: var(--dark);
+  color: #ffffff;
   text-decoration: none;
   font-weight: 500;
   transition: background 0.2s, color 0.2s;
@@ -77,20 +79,22 @@ body.employee-page {
 }
 
 .employee-nav-link:hover {
-  background: #f1f5f9;
-  color: var(--primary-dark);
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
 }
 
 .employee-nav-link.active {
-  background: rgba(99, 102, 241, 0.1);
-  color: var(--primary-dark);
-  border-left-color: var(--primary);
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-left-color: #ffffff;
 }
 
 .employee-content {
   flex: 1;
   padding: 1.5rem;
-  overflow-y: auto;
+  overflow-x: auto;
+  max-width: 100%;
+  min-height: 0;
 }
 
 .employee-panel {

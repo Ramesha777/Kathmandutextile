@@ -71,6 +71,8 @@ if (inventoryForm) {
     const barcode = document.getElementById("invBarcode")?.value?.trim();
     const name = document.getElementById("invName")?.value?.trim();
     const category = document.getElementById("invCategory")?.value;
+    const qty = document.getElementById("invQty")?.value;
+    const unit = document.getElementById("invUnit")?.value || null;
     const vendorName = document.getElementById("invVendorName")?.value?.trim();
     const vendorContact = document.getElementById("invVendorContact")?.value?.trim();
     const vendorAddress = document.getElementById("invVendorAddress")?.value?.trim();
@@ -93,6 +95,8 @@ if (inventoryForm) {
         barcode,
         name,
         category,
+        quantity: qty !== "" && qty != null && !isNaN(Number(qty)) ? Number(qty) : null,
+        unit: unit || null,
         vendorName: vendorName || null,
         vendorContact: vendorContact || null,
         vendorAddress: vendorAddress || null,
@@ -121,6 +125,8 @@ if (problemForm) {
     e.preventDefault();
     const barcode = document.getElementById("probBarcode")?.value?.trim();
     const name = document.getElementById("probName")?.value?.trim();
+    const qty = document.getElementById("probQty")?.value;
+    const unit = document.getElementById("probUnit")?.value || null;
     const explanation = document.getElementById("probExplanation")?.value?.trim();
 
     if (!barcode || !name || !explanation) {
@@ -137,6 +143,8 @@ if (problemForm) {
       await addDoc(collection(db, "problem_reports"), {
         barcode,
         name,
+        quantity: qty !== "" && qty != null && !isNaN(Number(qty)) ? Number(qty) : null,
+        unit: unit || null,
         explanation,
         reportedBy: auth.currentUser?.uid || null,
         reportedAt: serverTimestamp()
@@ -185,7 +193,10 @@ async function loadInventoryList() {
             <th>Barcode/ID</th>
             <th>Name</th>
             <th>Category</th>
+            <th>Qty</th>
+            <th>Unit</th>
             <th>Vendor</th>
+            <th>Vendor contact</th>
             <th>Purchase date</th>
             <th>Expiry date</th>
             <th>Storage area</th>
@@ -196,12 +207,17 @@ async function loadInventoryList() {
     for (const x of items) {
       const purchaseDate = x.purchaseDate || "—";
       const expiryDate = x.expiryDate || "—";
+      const qty = x.quantity != null ? x.quantity : "—";
+      const unit = x.unit || x.units || "—";
       html += `
         <tr>
           <td>${escapeHtml(x.barcode)}</td>
           <td>${escapeHtml(x.name)}</td>
           <td>${escapeHtml(x.category)}</td>
+          <td>${escapeHtml(qty)}</td>
+          <td>${escapeHtml(unit)}</td>
           <td>${escapeHtml(x.vendorName || "—")}</td>
+          <td>${escapeHtml(x.vendorContact || "—")}</td>
           <td>${escapeHtml(purchaseDate)}</td>
           <td>${escapeHtml(expiryDate)}</td>
           <td>${escapeHtml(x.storageArea || "—")}</td>
@@ -234,8 +250,11 @@ async function loadDamageReports() {
           <tr>
             <th>Barcode/ID</th>
             <th>Product name</th>
+            <th>Qty</th>
+            <th>Unit</th>
             <th>Explanation</th>
             <th>Reported at</th>
+            <th>Reported by</th>
           </tr>
         </thead>
         <tbody>
@@ -247,12 +266,17 @@ async function loadDamageReports() {
           reportedAt = x.reportedAt.toDate().toLocaleString();
         } catch (_) {}
       }
+      const qty = x.quantity != null ? x.quantity : "—";
+      const unit = x.unit || x.units || "—";
       html += `
         <tr>
           <td>${escapeHtml(x.barcode)}</td>
           <td>${escapeHtml(x.name)}</td>
+          <td>${escapeHtml(qty)}</td>
+          <td>${escapeHtml(unit)}</td>
           <td>${escapeHtml(x.explanation)}</td>
           <td>${escapeHtml(reportedAt)}</td>
+          <td>${escapeHtml(x.reportedBy || "—")}</td>
         </tr>
       `;
     }

@@ -6,6 +6,19 @@
   <title>Admin | Kathmandu Textile Industry</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="admin.css">
+  <style>
+    html, body { margin: 0; }
+    .admin-wrap { display: flex; flex-direction: column; min-height: 100vh; }
+    .admin-header { flex: 0 0 auto; }
+    .admin-body { display: flex; flex: 1; }
+    .admin-sidebar { 
+      flex: 0 0 250px; 
+      background: #f3f4f6; 
+    }
+    .admin-content { 
+      flex: 1; 
+    }
+  </style>
 </head>
 <body class="admin-page" data-required-role="admin">
   <div class="admin-wrap">
@@ -18,9 +31,9 @@
       <!-- Left: section list -->
       <nav class="admin-sidebar">
         <ul class="admin-nav">
-          <li><a href="#" class="admin-nav-link active" data-section="add-employee">Add Employee</a></li>
-          <li><a href="#" class="admin-nav-link" data-section="employees">Employees &amp; Users</a></li>
-          <li><a href="#" class="admin-nav-link" data-section="payment-rates">Payment Rates</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link active" data-section="employees">Employees &amp; Users</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="add-employee">Add Employee</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="payment-rates">Payment Rates</a></li>
         </ul>
       </nav>
 
@@ -28,13 +41,14 @@
       <main class="admin-content">
         <div id="adminMessage" class="admin-message" style="display: none;"></div>
 
-        <section id="panel-add-employee" class="admin-panel active">
-          <h2>Add Employee</h2>
-          <p class="admin-desc">Creates a new user in Firebase Auth and Firestore. You will be signed out after adding so the new user can be created; sign in again to continue.</p>
-          <form id="addEmployeeForm" class="form-row">
+        <!-- Employees & Users: grant login access + manage users -->
+        <section id="panel-employees" class="admin-panel active">
+          <h2>Employees &amp; Users</h2>
+          <p class="admin-desc">Grant app login access to staff. Add user (email, password, role) to create a Firebase Auth account; they can then sign in. Change role or remove access below.</p>
+          <form id="addUserForm" class="form-row">
             <div class="form-group">
               <label for="newEmail">Email</label>
-              <input type="email" id="newEmail" placeholder="employee@example.com" required autocomplete="off">
+              <input type="email" id="newEmail" placeholder="user@example.com" required autocomplete="off">
             </div>
             <div class="form-group">
               <label for="newPassword">Password</label>
@@ -49,22 +63,131 @@
               </select>
             </div>
             <div class="form-group">
-              <button type="submit" class="btn btn-primary">Add Employee</button>
+              <button type="submit" class="btn btn-primary">Add user (grant access)</button>
             </div>
           </form>
+          <p class="admin-desc" style="margin-top: 0.5rem;">Remove only deletes from this app (Firestore). To delete the Firebase Auth account use Firebase Console or a backend.</p>
+          <div id="userList"></div>
         </section>
 
-        <section id="panel-employees" class="admin-panel">
-          <h2>Employees &amp; Users</h2>
-          <p class="admin-desc">Change role or remove access. Remove only deletes the user from this app (Firestore); to delete the Firebase Auth account use Firebase Console or a backend.</p>
-          <div id="userList"></div>
+        <!-- Add Employee: staff information only (no login) -->
+        <section id="panel-add-employee" class="admin-panel">
+          <h2>Manage Employees</h2>
+
+          <div class="emp-section-filters" style="margin-bottom: 1.5rem; display: flex; gap: 10px;">
+            <button type="button" class="btn btn-sm btn-primary emp-section-btn" data-target="block-add-employee-form">Add New Employee</button>
+            <button type="button" class="btn btn-sm btn-outline emp-section-btn" data-target="block-employee-records">View Records</button>
+          </div>
+
+          <div id="block-add-employee-form">
+            <p class="admin-desc">Add staff information only. This does not grant app login—use Employees & Users to give access. All staff records are stored here.</p>
+            <form id="addEmployeeInfoForm" class="admin-form-stacked">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="empFullName">Full name</label>
+                <input type="text" id="empFullName" placeholder="Full name" required>
+              </div>
+              <div class="form-group">
+                <label for="empPhone">Phone</label>
+                <input type="tel" id="empPhone" placeholder="Phone number">
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="empEmail">Email (contact)</label>
+                <input type="email" id="empEmail" placeholder="email@example.com">
+              </div>
+              <div class="form-group">
+                <label for="empDepartment">Department</label>
+                <select id="empDepartment">
+                  <option value="">Select department</option>
+                  <option value="Machine">Machine</option>
+                  <option value="Production">Production</option>
+                  <option value="Daily">Daily</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="empAddress">Address</label>
+              <input type="text" id="empAddress" placeholder="Address">
+            </div>
+            <h3 class="form-section-title">Bank details</h3>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="empBankName">Bank name</label>
+                <input type="text" id="empBankName" placeholder="Bank name">
+              </div>
+              <div class="form-group">
+                <label for="empBankAccountNumber">Bank account number</label>
+                <input type="text" id="empBankAccountNumber" placeholder="Account number">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="empAccountHolderName">Account holder name</label>
+              <input type="text" id="empAccountHolderName" placeholder="Name as on account">
+            </div>
+            <h3 class="form-section-title">Personal ID</h3>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="empPersonalIdType">Personal ID type</label>
+                <select id="empPersonalIdType">
+                  <option value="">Select ID type</option>
+                  <option value="Driving license">Driving license</option>
+                  <option value="Passport">Passport</option>
+                  <option value="Citizenship">Citizenship</option>
+                  <option value="National ID">National ID</option>
+                  <option value="Pan Card">Pan Card</option>
+                  <option value="Voter card">Voter card</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="empPersonalIdNumber">Personal ID number</label>
+                <input type="text" id="empPersonalIdNumber" placeholder="ID number">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="empIdPhotoUrl">ID photo URL</label>
+              <input type="url" id="empIdPhotoUrl" placeholder="https://...">
+            </div>
+            <div class="form-group">
+              <label for="empPhotoUrl">Photo URL (employee photo)</label>
+              <input type="url" id="empPhotoUrl" placeholder="https://...">
+            </div>
+            <button type="submit" class="btn btn-primary">Add employee (info only)</button>
+            </form>
+          </div>
+
+          <div id="block-employee-records" style="display: none;">
+            <h3 class="form-section-title">Employee records</h3>
+            <p class="admin-desc">View added employees. Use view options to see table or individual records.</p>
+            
+            <div class="employee-view-toggle" style="margin-bottom: 1rem; display: flex; gap: 10px; align-items: center;">
+              <button type="button" class="btn btn-sm btn-primary emp-view-mode-btn active" data-view="table">Table View</button>
+              <button type="button" class="btn btn-sm btn-outline emp-view-mode-btn" data-view="single">Single View</button>
+              <div id="singleViewControls" style="display: none; gap: 10px; align-items: center; flex: 1;">
+                <button type="button" id="empPrevBtn" class="btn btn-sm btn-outline" title="Previous employee">← Prev</button>
+                <select id="empSelectDropdown" style="padding: 0.375rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem;">
+                  <option value="">Select employee...</option>
+                </select>
+                <button type="button" id="empNextBtn" class="btn btn-sm btn-outline" title="Next employee">Next →</button>
+                <span id="empRecordCount" style="margin-left: auto; font-size: 0.875rem; color: #6b7280;"></span>
+              </div>
+            </div>
+            <div id="employeeRecordsList" class="employee-records-wrap"></div>
+          </div>
         </section>
 
         <section id="panel-payment-rates" class="admin-panel">
           <h2>Payment Rates</h2>
           <p class="admin-desc">Define rates for Machine Operators (fibres per meter), Productions (pay per product), and Daily (hourly wages). Stored in Firebase.</p>
 
-          <div class="rate-block">
+          <div class="rate-filters" style="margin-bottom: 1rem; display: flex; gap: 10px;">
+            <button type="button" class="btn btn-sm btn-primary rate-filter-btn" data-target="block-machine">Machine Operators</button>
+            <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-production">Productions</button>
+            <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-daily">Daily Wages</button>
+          </div>
+
+          <div id="block-machine" class="rate-block">
             <h3>Machine Operators</h3>
             <p class="rate-desc">Fibre rates per meter (e.g. Cotton Rs. 4/m)</p>
             <form id="formMachineOps" class="form-row form-row-compact">
@@ -83,7 +206,7 @@
             <div id="listMachineOps" class="rate-list"></div>
           </div>
 
-          <div class="rate-block">
+          <div id="block-production" class="rate-block" style="display: none;">
             <h3>Productions</h3>
             <p class="rate-desc">Pay per product (e.g. Pant Rs. 12/piece)</p>
             <form id="formProductions" class="form-row form-row-compact">
@@ -102,7 +225,7 @@
             <div id="listProductions" class="rate-list"></div>
           </div>
 
-          <div class="rate-block">
+          <div id="block-daily" class="rate-block" style="display: none;">
             <h3>Daily Wages</h3>
             <p class="rate-desc">Hourly wage rates (Rs./hour)</p>
             <form id="formDaily" class="form-row form-row-compact">
