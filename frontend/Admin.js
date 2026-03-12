@@ -34,10 +34,13 @@ const logoutBtn = document.getElementById("logoutBtn");
 let allEmployeesData = [];
 let allUsersData = [];
 let currentEmployeeDeptFilter = "";
-let currentViewMode = "table"; // "table" or "single"
-let currentEmployeeIndex = 0;  // Index for single view navigation
 let editingEmployeeId = null;
 let modalConfirmCallback = null;
+
+// Employee modal elements
+let employeeModal = null;
+let employeeModalBody = null;
+let modalCloseEmployee = null;
 
 function showMessage(text, isError = false) {
   if (!adminMessage) return;
@@ -119,7 +122,7 @@ function renderUserTable(users) {
 
 function escapeHtml(str) {
   const div = document.createElement("div");
-  div.textContent = str;
+  div.textContent = str == null ? "" : String(str);
   return div.innerHTML;
 }
 
@@ -308,10 +311,36 @@ async function addEmployeeInfo() {
       editingEmployeeId = null;
       if (submitBtn) submitBtn.textContent = "Add employee (info only)";
     } else {
+      // Auto-generate employee ID from last 5 digits of phone number
+      let employeeId = null;
+      if (phone) {
+        // Extract only digits from phone and get last 5
+        const phoneDigits = phone.replace(/\D/g, '');
+        employeeId = phoneDigits.slice(-5); // last 5 digits
+        
+        // Check if this ID already exists
+        const existingSnap = await getDoc(doc(db, "employees", employeeId));
+        if (existingSnap.exists()) {
+          showMessage(`Employee ID ${employeeId} (from phone) already exists. Please use a different phone number.`, true);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Add employee (info only)";
+          }
+          return;
+        }
+      } else {
+        showMessage("Phone number is required to generate employee ID.", true);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Add employee (info only)";
+        }
+        return;
+      }
+
       empData.addedAt = new Date().toISOString();
       empData.addedBy = auth.currentUser?.uid || null;
-      await addDoc(collection(db, "employees"), empData);
-      showMessage("Employee record added.");
+      await setDoc(doc(db, "employees", employeeId), empData);
+      showMessage(`Employee record added with ID: ${employeeId}`);
     }
 
     addEmployeeInfoForm?.reset();
@@ -360,6 +389,42 @@ function showModal(title, text, onConfirm) {
   modal.classList.add("open");
 }
 
+function createEmployeeModal() {
+  // Use modal already present in admin.html
+  employeeModal = document.getElementById("employee-modal");
+  employeeModalBody = document.getElementById("employee-modal-body");
+  modalCloseEmployee = document.getElementById("modal-close-employee");
+
+  // Fallback only if missing
+  if (!employeeModal || !employeeModalBody || !modalCloseEmployee) {
+    const modalHtml = `
+    <div id="employee-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+      <div class="modal-box employee-modal-content">
+        <div class="modal-header">
+          <h3>Employee Details</h3>
+          <button type="button" class="modal-close" id="modal-close-employee">&times;</button>
+        </div>
+        <div class="modal-body" id="employee-modal-body"></div>
+      </div>
+    </div>
+    `;
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+    employeeModal = document.getElementById("employee-modal");
+    employeeModalBody = document.getElementById("employee-modal-body");
+    modalCloseEmployee = document.getElementById("modal-close-employee");
+  }
+
+  if (modalCloseEmployee) {
+    modalCloseEmployee.onclick = closeEmployeeModal;
+  }
+
+  if (employeeModal) {
+    employeeModal.onclick = (e) => {
+      if (e.target === employeeModal) closeEmployeeModal();
+    };
+  }
+}
+
 function hideModal() {
   const modal = document.getElementById("confirmationModal");
   if (modal) modal.classList.remove("open");
@@ -382,6 +447,124 @@ function deleteEmployee(id) {
     }
   );
 }
+
+// Employee Modal Functions
+function showEmployeeModal(emp) {
+  try {
+    if (!emp) {
+      showMessage("Employee details not found.", true);
+      return;
+    }
+
+    createEmployeeModal();
+    if (!employeeModal || !employeeModalBody) {
+      showMessage("Could not open employee modal.", true);
+      return;
+    }
+    
+    // Generate photo HTML
+    let photoHtml = '';
+    if (emp.photoUrl) {
+      photoHtml = `
+        <div class="employee-modal-photo-wrap">
+          <img src="${escapeHtml(emp.photoUrl)}" referrerpolicy="no-referrer" alt="${escapeHtml(emp.fullName || 'Employee')}" class="employee-modal-photo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div class="employee-modal-photo-placeholder" style="display: none;">
+            <span>${escapeHtml((emp.fullName || 'E').charAt(0).toUpperCase())}</span>
+          </div>
+        </div>
+      `;
+    } else {
+      photoHtml = `
+        <div class="employee-modal-photo-wrap">
+          <div class="employee-modal-photo-placeholder">
+            <span>${escapeHtml((emp.fullName || 'E').charAt(0).toUpperCase())}</span>
+          </div>
+        </div>
+      `;
+    }
+    
+    // Generate ID Photo HTML
+    let idPhotoHtml = '';
+    if (emp.personalIdPhotoUrl) {
+      idPhotoHtml = `
+        <div class="employee-modal-id-photo">
+          <a href="${escapeHtml(emp.personalIdPhotoUrl)}" target="_blank" title="View ID">
+            <img src="${escapeHtml(emp.personalIdPhotoUrl)}" referrerpolicy="no-referrer" alt="ID Photo" onerror="this.parentElement.style.display='none';">
+          </a>
+        </div>
+      `;
+    } else {
+      idPhotoHtml = `<div class="employee-modal-no-photo">No ID photo</div>`;
+    }
+    
+    const modalContent = `
+      <div class="employee-modal-card">
+        <div class="employee-modal-header">
+          <div class="employee-modal-header-info">
+            <h4>${escapeHtml(emp.fullName || emp.name || 'Employee')}</h4>
+            <span class="employee-modal-badge">ID: ${escapeHtml(emp.id || '—')}</span>
+          </div>
+          ${photoHtml}
+        </div>
+        <div class="employee-modal-body-section">
+          <h5>Contact Information</h5>
+          <div class="employee-modal-grid">
+            <div><strong>Department:</strong> ${escapeHtml(emp.department || '—')}</div>
+            <div><strong>Phone:</strong> ${escapeHtml(emp.phone || '—')}</div>
+            <div><strong>Email:</strong> ${escapeHtml(emp.email || '—')}</div>
+            <div><strong>Address:</strong> ${escapeHtml(emp.address || '—')}</div>
+          </div>
+        </div>
+        <div class="employee-modal-body-section">
+          <h5>Bank Details</h5>
+          <div class="employee-modal-grid">
+            <div><strong>Bank Name:</strong> ${escapeHtml(emp.bankName || '—')}</div>
+            <div><strong>Account Number:</strong> ${escapeHtml(emp.bankAccountNumber || '—')}</div>
+            <div><strong>Account Holder:</strong> ${escapeHtml(emp.accountHolderName || '—')}</div>
+          </div>
+        </div>
+        <div class="employee-modal-body-section">
+          <h5>ID Information</h5>
+          <div class="employee-modal-grid">
+            <div><strong>ID Type:</strong> ${escapeHtml(emp.personalIdType || '—')}</div>
+            <div><strong>ID Number:</strong> ${escapeHtml(emp.personalIdNumber || '—')}</div>
+          </div>
+          <div class="employee-modal-id-section">
+            ${idPhotoHtml}
+          </div>
+        </div>
+        <div class="employee-modal-actions">
+          <button type="button" class="btn btn-primary" id="btn-modal-edit">Edit</button>
+          <button type="button" class="btn btn-danger" id="btn-modal-remove">Remove</button>
+        </div>
+      </div>
+    `;
+    
+    employeeModalBody.innerHTML = modalContent;
+    employeeModal.style.display = "flex";
+    
+    // Add event listeners for Edit and Remove buttons in modal
+    document.getElementById('btn-modal-edit')?.addEventListener('click', () => {
+      closeEmployeeModal();
+      prepareEditEmployee(emp);
+    });
+    
+    document.getElementById('btn-modal-remove')?.addEventListener('click', () => {
+      closeEmployeeModal();
+      deleteEmployee(emp.id);
+    });
+  } catch (err) {
+    console.error("Failed to show employee modal:", err);
+    showMessage("Failed to open employee details.", true);
+  }
+}
+
+function closeEmployeeModal() {
+  if (employeeModal) {
+    employeeModal.style.display = "none";
+  }
+}
+
 
 function prepareEditEmployee(emp) {
   // Switch to Add Form tab (this will trigger the reset listener first)
@@ -435,7 +618,6 @@ function renderEmployeeTable(departmentFilter) {
       <div id="employeeTableContainer"></div>
     `;
     document.getElementById("empSearchInput").addEventListener("input", () => {
-      currentEmployeeIndex = 0;
       renderEmployeeRows();
     });
   }
@@ -447,7 +629,7 @@ function renderEmployeeRows() {
   if (!container) return;
 
   let list = currentEmployeeDeptFilter
-    ? allEmployeesData.filter((e) => (e.department || "") === departmentFilter)
+    ? allEmployeesData.filter((e) => (e.department || "") === currentEmployeeDeptFilter)
     : allEmployeesData;
 
   const term = document.getElementById("empSearchInput")?.value?.toLowerCase() || "";
@@ -468,19 +650,7 @@ function renderEmployeeRows() {
     return;
   }
 
-  // Populate dropdown with filtered list
-  populateEmployeeDropdown(list);
-
-  if (currentViewMode === "table") {
-    renderTableView(list);
-  } else {
-    renderSingleView(list);
-    // Update record count
-    const recordCount = document.getElementById("empRecordCount");
-    if (recordCount) {
-      recordCount.textContent = `${currentEmployeeIndex + 1} of ${list.length}`;
-    }
-  }
+  renderTableView(list);
 }
 
 function renderTableView(list) {
@@ -490,16 +660,11 @@ function renderTableView(list) {
     <thead>
       <tr>
         <th>Name</th>
+        <th>Employee ID</th>
         <th>Department</th>
         <th>Phone</th>
         <th>Email</th>
-        <th>Bank name</th>
-        <th>Account holder</th>
-        <th>Account Number</th>
-        <th>ID Number</th>
-        <th>ID Photo</th>
-                <th>ID type</th>
-        <th>Employee photo</th>
+        <th>Actions</th>
       </tr>
     </thead>`;
   let tbody = "<tbody>";
@@ -507,173 +672,28 @@ function renderTableView(list) {
     tbody += `
       <tr>
         <td>${escapeHtml(e.fullName || "—")}</td>
+        <td>${escapeHtml(e.id || "—")}</td>
         <td>${escapeHtml(e.department || "—")}</td>
         <td>${escapeHtml(e.phone || "—")}</td>
         <td>${escapeHtml(e.email || "—")}</td>
-        <td>${escapeHtml(e.bankName || "—")}</td>
-        <td>${escapeHtml(e.accountHolderName || "—")}</td>
-        <td>${escapeHtml(e.bankAccountNumber || "—")}</td>
-        <td>${escapeHtml(e.personalIdNumber || "—")}</td>
-        <td>${e.personalIdPhotoUrl ? `<a href="${escapeHtml(e.personalIdPhotoUrl)}" target="_blank">View</a>` : "—"}</td>
-        <td>${escapeHtml(e.personalIdType || "—")}</td>
-        <td>${e.photoUrl ? `<a href="${escapeHtml(e.photoUrl)}" target="_blank">View</a>` : "—"}</td>
-
-
+        <td><button type="button" class="btn btn-sm btn-primary btn-view-employee" data-id="${e.id}">View</button></td>
       </tr>`;
   }
   tbody += "</tbody>";
   container.innerHTML = "<table class=\"admin-table employee-records-table\">" + thead + tbody + "</table>";
-}
-
-function renderSingleView(list) {
-  const container = document.getElementById("employeeTableContainer");
-  if (!container) return;
-  if (list.length === 0) return;
   
-  // Clamp index within bounds
-  if (currentEmployeeIndex >= list.length) {
-    currentEmployeeIndex = list.length - 1;
-  }
-  if (currentEmployeeIndex < 0) {
-    currentEmployeeIndex = 0;
-  }
-
-  const employee = list[currentEmployeeIndex];
-  
-  // Generate photo HTML
-  let photoHtml = '';
-  if (employee.photoUrl) {
-    photoHtml = `
-      <div class="employee-photo-wrap">
-        <img src="${escapeHtml(employee.photoUrl)}" alt="${escapeHtml(employee.fullName || 'Employee')}" class="employee-photo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="employee-photo-placeholder" style="display: none;">
-          <span>${escapeHtml((employee.fullName || 'E').charAt(0).toUpperCase())}</span>
-        </div>
-      </div>
-    `;
-  } else {
-    // Show placeholder with first letter of name
-    photoHtml = `
-      <div class="employee-photo-wrap">
-        <div class="employee-photo-placeholder">
-          <span>${escapeHtml((employee.fullName || 'E').charAt(0).toUpperCase())}</span>
-        </div>
-      </div>
-    `;
-  }
-  
-  // Generate ID Photo HTML
-  let idPhotoHtml = '';
-  if (employee.personalIdPhotoUrl) {
-    idPhotoHtml = `
-      <div style="width: 250px; height: 160px; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; background: #f9fafb; display: flex; align-items: center; justify-content: center;">
-        <a href="${escapeHtml(employee.personalIdPhotoUrl)}" target="_blank" title="View ID">
-          <img src="${escapeHtml(employee.personalIdPhotoUrl)}" alt="ID" style="width: 100%; height: 100%; object-fit: cover;">
-        </a>
-      </div>
-    `;
-  } else {
-    idPhotoHtml = `<div style="color: #9ca3af; font-size: 0.85rem; font-style: italic; padding: 0.5rem 0;">No ID photo</div>`;
-  }
-
-  const cardHtml = `
-    <div class="employee-card">
-      <div class="employee-card-header">
-        <div class="employee-card-header-info">
-          <h4>${escapeHtml(employee.fullName || "—")}</h4>
-          <span class="employee-badge">${currentEmployeeIndex + 1} of ${list.length}</span>
-        </div>
-        <div style="display: flex; gap: 0.5rem;">
-          <button type="button" id="btnEditEmpSingle" class="btn btn-sm btn-outline">Edit</button>
-          <button type="button" id="btnRemoveEmpSingle" class="btn btn-sm btn-danger">Remove</button>
-        </div>
-      </div>
-      <div class="employee-card-body">
-        <div class="employee-card-section" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
-          <div style="flex: 1;">
-            <h5>Contact Information</h5>
-            <p><strong>Department:</strong> ${escapeHtml(employee.department || "—")}</p>
-            <p><strong>Phone:</strong> ${escapeHtml(employee.phone || "—")}</p>
-            <p><strong>Email:</strong> ${escapeHtml(employee.email || "—")}</p>
-            <p><strong>Address:</strong> ${escapeHtml(employee.address || "—")}</p>
-          </div>
-          <div style="flex-shrink: 0;">
-            ${photoHtml}
-          </div>
-        </div>
-        <div class="employee-card-section">
-          <h5>Bank Details</h5>
-          <p><strong>Bank Name:</strong> ${escapeHtml(employee.bankName || "—")}</p>
-          <p><strong>Account Number:</strong> ${escapeHtml(employee.bankAccountNumber || "—")}</p>
-          <p><strong>Account Holder:</strong> ${escapeHtml(employee.accountHolderName || "—")}</p>
-        </div>
-        <div class="employee-card-section" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
-          <div style="flex: 1;">
-            <h5>ID Information</h5>
-            <p><strong>ID Type:</strong> ${escapeHtml(employee.personalIdType || "—")}</p>
-            <p><strong>ID Number:</strong> ${escapeHtml(employee.personalIdNumber || "—")}</p>
-          </div>
-          <div style="flex-shrink: 0;">
-            ${idPhotoHtml}
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  container.innerHTML = cardHtml;
-
-  // Attach listeners for Edit/Remove
-  document.getElementById("btnEditEmpSingle")?.addEventListener("click", () => prepareEditEmployee(employee));
-  document.getElementById("btnRemoveEmpSingle")?.addEventListener("click", () => deleteEmployee(employee.id));
-
-  // Update dropdown selection
-  const dropdown = document.getElementById("empSelectDropdown");
-  if (dropdown) {
-    dropdown.value = currentEmployeeIndex;
-  }
-
-  // Update button states
-  const prevBtn = document.getElementById("empPrevBtn");
-  const nextBtn = document.getElementById("empNextBtn");
-  if (prevBtn) prevBtn.disabled = currentEmployeeIndex === 0;
-  if (nextBtn) nextBtn.disabled = currentEmployeeIndex === list.length - 1;
-}
-
-function populateEmployeeDropdown(list) {
-  const dropdown = document.getElementById("empSelectDropdown");
-  if (!dropdown) return;
-  
-  dropdown.innerHTML = '<option value="">Select employee...</option>';
-  list.forEach((emp, idx) => {
-    const option = document.createElement("option");
-    option.value = idx;
-    option.textContent = escapeHtml(emp.fullName || "Employee") + ` (#${idx + 1})`;
-    dropdown.appendChild(option);
+  // Add click listeners to view buttons
+  container.querySelectorAll('.btn-view-employee').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const empId = btn.getAttribute('data-id');
+      const emp = allEmployeesData.find(e => e.id === empId);
+      if (emp) {
+        showEmployeeModal(emp);
+      }
+    });
   });
 }
 
-function navigateEmployee(direction) {
-  let list = currentEmployeeDeptFilter
-    ? allEmployeesData.filter((e) => (e.department || "") === currentEmployeeDeptFilter)
-    : allEmployeesData;
-
-  const term = document.getElementById("empSearchInput")?.value?.toLowerCase() || "";
-  if (term) {
-    list = list.filter(e => 
-      (e.fullName || "").toLowerCase().includes(term) ||
-      (e.email || "").toLowerCase().includes(term) ||
-      (e.phone || "").toLowerCase().includes(term)
-    );
-  }
-  
-  if (direction === "prev" && currentEmployeeIndex > 0) {
-    currentEmployeeIndex--;
-  } else if (direction === "next" && currentEmployeeIndex < list.length - 1) {
-    currentEmployeeIndex++;
-  }
-  
-  renderEmployeeRows();
-}
 
 function showPanel(sectionId) {
   document.querySelectorAll(".admin-panel").forEach((p) => p.classList.remove("active"));
@@ -942,59 +962,10 @@ function init() {
       btn.classList.remove("btn-outline");
       btn.classList.add("btn-primary", "active");
       currentEmployeeDeptFilter = btn.getAttribute("data-department") || "";
-      currentEmployeeIndex = 0; // Reset index when changing department
       renderEmployeeTable(currentEmployeeDeptFilter);
     });
   });
 
-  // View mode toggle (Table vs Single)
-  document.querySelectorAll(".emp-view-mode-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".emp-view-mode-btn").forEach((b) => {
-        b.classList.remove("btn-primary");
-        b.classList.add("btn-outline");
-      });
-      btn.classList.remove("btn-outline");
-      btn.classList.add("btn-primary", "active");
-      
-      const mode = btn.getAttribute("data-view");
-      currentViewMode = mode;
-      currentEmployeeIndex = 0; // Reset index when switching mode
-      
-      const singleViewControls = document.getElementById("singleViewControls");
-      if (singleViewControls) {
-        if (mode === "single") {
-          singleViewControls.style.display = "flex";
-        } else {
-          singleViewControls.style.display = "none";
-        }
-      }
-      
-      renderEmployeeTable(currentEmployeeDeptFilter);
-    });
-  });
-
-  // Previous/Next buttons for single view
-  const prevBtn = document.getElementById("empPrevBtn");
-  const nextBtn = document.getElementById("empNextBtn");
-  if (prevBtn) {
-    prevBtn.addEventListener("click", () => navigateEmployee("prev"));
-  }
-  if (nextBtn) {
-    nextBtn.addEventListener("click", () => navigateEmployee("next"));
-  }
-
-  // Dropdown selector for single view
-  const dropdown = document.getElementById("empSelectDropdown");
-  if (dropdown) {
-    dropdown.addEventListener("change", (e) => {
-      const value = e.target.value;
-      if (value !== "") {
-        currentEmployeeIndex = parseInt(value, 10);
-        renderEmployeeTable(currentEmployeeDeptFilter);
-      }
-    });
-  }
 
   document.querySelectorAll(".rate-filter-btn").forEach((btn) => {
     btn.addEventListener("click", () => {

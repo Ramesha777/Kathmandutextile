@@ -10,9 +10,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+
+// DOM elements
 
 const messageEl = document.getElementById("employeeMessage");
 const inventoryForm = document.getElementById("inventoryForm");
@@ -23,12 +27,16 @@ const logoutBtn = document.getElementById("logoutBtn");
 const inventoryListEl = document.getElementById("inventoryList");
 const damageReportsListEl = document.getElementById("damageReportsList");
 
+// Utility functions
+
 function escapeHtml(str) {
   if (str == null) return "—";
   const div = document.createElement("div");
   div.textContent = String(str);
   return div.innerHTML;
 }
+
+// Show a specific panel and hide others
 
 function showPanel(sectionId) {
   document.querySelectorAll(".employee-panel").forEach((p) => p.classList.remove("active"));
@@ -41,6 +49,8 @@ function showPanel(sectionId) {
   if (sectionId === "damage-reports") loadDamageReports();
 }
 
+// Show a message (error or success)
+
 function showMessage(text, isError = false) {
   if (!messageEl) return;
   messageEl.textContent = text;
@@ -51,6 +61,8 @@ function showMessage(text, isError = false) {
   }, 5000);
 }
 
+// Get storage area value, handling "Other" option
+
 function getStorageArea() {
   const val = storageSelect?.value || "";
   if (val === "Other") {
@@ -59,11 +71,15 @@ function getStorageArea() {
   return val;
 }
 
+// Event listeners
+
 if (storageSelect && storageOther) {
   storageSelect.addEventListener("change", () => {
     storageOther.style.display = storageSelect.value === "Other" ? "block" : "none";
   });
 }
+
+// Handle inventory form submission
 
 if (inventoryForm) {
   inventoryForm.addEventListener("submit", async (e) => {
@@ -71,8 +87,8 @@ if (inventoryForm) {
     const barcode = document.getElementById("invBarcode")?.value?.trim();
     const name = document.getElementById("invName")?.value?.trim();
     const category = document.getElementById("invCategory")?.value;
-    const qty = document.getElementById("invQty")?.value;
-    const unit = document.getElementById("invUnit")?.value || null;
+    const qty = document.getElementById("invQty")?.value?.trim();
+    const unit = document.getElementById("invUnit")?.value?.trim() || null;
     const vendorName = document.getElementById("invVendorName")?.value?.trim();
     const vendorContact = document.getElementById("invVendorContact")?.value?.trim();
     const vendorAddress = document.getElementById("invVendorAddress")?.value?.trim();
@@ -120,6 +136,8 @@ if (inventoryForm) {
   });
 }
 
+// Handle problem report form submission
+
 if (problemForm) {
   problemForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -162,6 +180,8 @@ if (problemForm) {
   });
 }
 
+// Handle logout
+
 if (logoutBtn) {
   logoutBtn.addEventListener("click", async () => {
     try {
@@ -174,6 +194,8 @@ if (logoutBtn) {
 }
 
 // ─── View All Inventory ───
+
+
 async function loadInventoryList() {
   if (!inventoryListEl) return;
   inventoryListEl.innerHTML = "<p class='loading-msg'>Loading inventory…</p>";
@@ -231,7 +253,10 @@ async function loadInventoryList() {
   }
 }
 
+
 // ─── View Damage Reports ───
+
+
 async function loadDamageReports() {
   if (!damageReportsListEl) return;
   damageReportsListEl.innerHTML = "<p class='loading-msg'>Loading damage reports…</p>";
@@ -288,6 +313,7 @@ async function loadDamageReports() {
 }
 
 // Nav: switch section
+
 document.querySelectorAll(".employee-nav-link").forEach((a) => {
   a.addEventListener("click", (e) => {
     e.preventDefault();

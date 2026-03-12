@@ -1,0 +1,5 @@
+- [x] Inspect admin employee records "View" flow and identify root cause
+- [x] Fix modal element binding and event wiring in `frontend/Admin.js`
+- [x] Fix admin script include case mismatch in `frontend/admin.html`
+- [x] Verify no stale modal ID references remain
+- [x] Mark all tasks complete

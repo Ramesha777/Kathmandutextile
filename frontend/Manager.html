@@ -1,62 +1,227 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manager | Kathmandu Textile Industry</title>
-    <link rel="stylesheet" href="manager.css">
-    <style>
-        html, body { margin: 0; height: auto; overflow: visible; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manager | Kathmandu Textile Industry</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="manager.css">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    .manager-wrap { display: flex; flex-direction: column; height: 100vh; }
+    .manager-header { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; }
+    .manager-header h1 { margin: 0; font-size: 1.5rem; }
+    .manager-header .btn-outline { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+    .manager-body { display: flex; flex: 1; min-height: 0; }
+    .manager-sidebar { 
+      flex: 0 0 250px; 
+      background: #f3f4f6; 
+    }
+    .manager-content { 
+      flex: 1; 
+      overflow-y: auto;
+      padding: 1.5rem;
+      min-height: calc(100vh - 70px);
+    }
+    .manager-panel {
+      display: none;
+      min-height: 100%;
+    }
+    .manager-panel.active {
+      display: block;
+      min-height: 100%;
+    }
+  </style>
 </head>
-<body data-required-role="Manager">
-    <!-- creating clickable section for left side -->
-     
+<body class="manager-page" data-required-role="Manager">
+  <div class="manager-wrap">
+    <header class="manager-header">
+      <h1>Manager Dashboard</h1>
+      <button type="button" class="btn btn-outline" id="logoutBtn">Sign Out</button>
+    </header>
 
+    <div class="manager-body">
+      <!-- Left: section list -->
+      <nav class="manager-sidebar">
+        <ul class="manager-nav">
+          <li><a role="button" tabindex="0" class="manager-nav-link active" data-section="wages">💵 Wage Entry</a></li>
+          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="employees">🧑‍🤝‍🧑Employees</a></li>
+          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="slips"> Payslips</a></li>
+        </ul>
+      </nav>
 
+      <!-- Right: section details -->
+      <main class="manager-content">
+        <div id="managerMessage" class="manager-message" style="display: none;"></div>
 
+        <!-- Wage Entry Section -->
+        <section id="panel-wages" class="manager-panel active">
+          <h2>Enter Wages</h2>
+          <p class="manager-desc">Enter employee wage information including work done, overtime, bonuses, and deductions.</p>
+          <form id="wage-form" class="form-grid">
+            <div class="form-group">
+              <label for="wage-employee">Employee (ID / Name)</label>
+              <input type="text" id="wage-employee" list="employee-list" placeholder="Type employee name or ID">
+              <datalist id="employee-list"></datalist>
+              <input type="hidden" id="wage-employee-id">
+            </div>
+            <div class="form-group">
+              <label for="wage-date">Date</label>
+              <input type="date" id="wage-date">
+            </div>
+            <div class="form-group">
+              <label for="wage-dept">Department</label>
+              <select id="wage-dept">
+                <option value="">Select department</option>
+                <option value="Machine Operators">Machine Operators</option>
+                <option value="Production">Production</option>
+                <option value="Daily Workers">Daily Workers</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="wage-item">Item/Work Type</label>
+              <select id="wage-item">
+                <option value="">Select item</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="wage-qty">Quantity</label>
+              <input type="number" id="wage-qty" min="0" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label for="wage-unit">Unit</label>
+               <select id="wage-unit">
+                <option value="">Select unit</option>
+                <option value="piece">Piece</option>
+                <option value="meter">Meter</option>
+                <option value="hour">Hour</option>
+                <option value="day">Day</option>
+                <option value="week">KG</option>
+              </select>
+            </div>
 
+            <div class="form-group">
+              <label for="wage-rate">Rate (Auto-filled)</label>
+              <input type="number" id="wage-rate" readonly placeholder="Auto-filled">
+            </div>
 
+            <div class="form-group">
+              <label for="wage-ot">Overtime (hours)</label>
+              <input type="number" id="wage-ot" min="0" value="0">
+            </div>
+            <div class="form-group">
+              <label for="wage-bonus">Bonus</label>
+              <input type="number" id="wage-bonus" min="0" value="0">
+            </div>
+            <div class="form-group">
+              <label for="wage-deduct">Deduction</label>
+              <input type="number" id="wage-deduct" min="0" value="0">
+            </div>
 
+            <div class="form-actions" style="grid-column: 1 / -1; display:flex; gap:10px;">
+              <button type="button" id="btn-save-wage" class="btn btn-primary">Save Entry</button>
+              <button type="button" id="btn-clear-wage" class="btn btn-outline">Clear</button>
+            </div>
+          </form>
 
+          <!-- Wage Entries Table -->
+          <div style="margin-top: 2rem;">
+            <h3>Recent Wage Entries</h3>
+            <table id="tbl-wage-entries" class="manager-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Item/Work</th>
+                  <th>Qty</th>
+                  <th>Unit</th>
+                  <th>Rate</th>
+                  <th>Wages</th>
+                  <th>OT</th>
+                  <th>OT Pay</th>
+                  <th>Bonus</th>
+                  <th>Deduction</th>
+                  <th>Net Pay</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
 
+        <!-- Employees Section -->
+        <section id="panel-employees" class="manager-panel">
+          <h2>Employees</h2>
+          <p class="manager-desc">View all employee records.</p>
+          <div class="employee-search-wrap">
+            <input type="text" id="employee-search" placeholder="Search by ID or Name..." class="employee-search-input">
+          </div>
+          <table id="tbl-employees" class="manager-table">
+            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Department</th><th>Position</th><th>Action</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </section>
 
+        <!-- Employee Details Modal -->
+        <div id="employee-modal" class="modal-overlay" style="display: none;">
+          <div class="modal-box employee-modal-content">
+            <div class="modal-header">
+              <h3>Employee Details</h3>
+              <button type="button" class="modal-close" id="modal-close-employee">&times;</button>
+            </div>
+            <div class="modal-body" id="employee-modal-body">
+              <!-- Employee details will be populated here -->
+            </div>
+          </div>
+        </div>
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        <!-- Payslips Section -->
+        <section id="panel-slips" class="manager-panel">
+          <h2>Payslips</h2>
+          <p class="manager-desc">Generate and view employee payslips for specific months.</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="slip-employee">Employee</label>
+              <select id="slip-employee"><option value="">Select employee</option></select>
+            </div>
+            <div class="form-group">
+              <label for="slip-month">Month</label>
+              <select id="slip-month">
+                <option value="January">January</option>
+                <option value="February">February</option>
+                <option value="March">March</option>
+                <option value="April">April</option>
+                <option value="May">May</option>
+                <option value="June">June</option>
+                <option value="July">July</option>
+                <option value="August">August</option>
+                <option value="September">September</option>
+                <option value="October">October</option>
+                <option value="November">November</option>
+                <option value="December">December</option>
+              </select>
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+              <button id="btn-preview-slip" class="btn btn-primary">Preview</button>
+              <button id="btn-download-slip" class="btn btn-outline">Download PDF</button>
+            </div>
+          </div>
+          <div id="slip-summary" style="display:none; margin-top: 1rem;" aria-hidden>
+            <h3>Summary — <span id="summary-month"></span></h3>
+            <div id="summary-content"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
 
   <div id="toast" class="toast"></div>
+
+  <!-- jsPDF CDN for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
 
   <script type="module" src="auth-guard.js"></script>
   <script type="module" src="manager.js"></script>
 </body>
-</html>
