@@ -8,15 +8,14 @@
   <link rel="stylesheet" href="Employee.css">
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-    .employee-wrap { display: flex; flex-direction: column; height: 100vh; }
+    .employee-wrap { width: calc(100% - 24px); margin: 12px auto; display: flex; flex-direction: column; height: calc(100vh - 24px); border-radius: 12px; }
     .employee-header { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; }
     .employee-header h1 { margin: 0; font-size: 1.35rem; }
     .employee-header .btn-outline { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
-    .employee-body { display: flex; flex: 1; min-height: 0; }
-    .employee-sidebar { flex: 0 0 220px; }
-    .employee-content { flex: 1; overflow-y: auto; padding: 1.5rem; min-height: calc(100vh - 70px); }
-    .employee-panel { display: none; min-height: 100%; }
-    .employee-panel.active { display: block; min-height: 100%; }
+    .employee-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+    .employee-sidebar { flex: 0 0 220px; flex-shrink: 0; }
+    .employee-content { flex: 1; min-height: 0; overflow: hidden; padding: 1.5rem; display: flex; flex-direction: column; scrollbar-gutter: stable; }
+    .employee-content-inner { flex: 1; min-height: 0; position: relative; overflow: hidden; }
   </style>
 </head>
 <!--Employee dashboard section-->
@@ -37,11 +36,11 @@
         </ul>
       </nav>
 <!-- main content-->
- <!-- Right: section details -->
+  <!-- Right: section details -->
   <!-- Inventory section -->
       <main class="employee-content">
         <div id="employeeMessage" class="employee-message" style="display: none;"></div>
-
+        <div class="employee-content-inner">
         <section id="panel-add-inventory" class="employee-panel active">
           <h2>Add Inventory</h2>
           <p class="section-desc">Enter product and vendor details. Expiry date is optional.</p>
@@ -188,6 +187,7 @@
           <p class="section-desc">All product problem / damage reports submitted.</p>
           <div id="damageReportsList" class="emp-list"></div>
         </section>
+        </div>
       </main>
     </div>
   </div>

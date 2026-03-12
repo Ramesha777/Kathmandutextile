@@ -7,30 +7,19 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="admin.css">
     <style>
-    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-    .admin-wrap { display: flex; flex-direction: column; height: 100vh; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    .admin-wrap { width: calc(100% - 24px); margin: 12px auto; display: flex; flex-direction: column; height: calc(100vh - 24px); min-height: calc(100vh - 24px); border-radius: 12px; }
     .admin-header { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; }
     .admin-header h1 { margin: 0; font-size: 1.5rem; }
     .admin-header .btn-outline { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
-    .admin-body { display: flex; flex: 1; min-height: 0; }
-    .admin-sidebar { 
-      flex: 0 0 250px; 
-      background: #f3f4f6; 
-    }
+    .admin-body { display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%; }
+    .admin-sidebar { flex: 0 0 250px; background: #f3f4f6; flex-shrink: 0; }
     .admin-content { 
-      flex: 1; 
-      overflow-y: auto;
-      padding: 1.5rem;
-      min-height: calc(100vh - 70px);
+      flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 1.5rem;
+      display: flex; flex-direction: column; width: 100%;
+      scrollbar-gutter: stable;
     }
-    .admin-panel {
-      display: none;
-      min-height: 100%;
-    }
-    .admin-panel.active {
-      display: block;
-      min-height: 100%;
-    }
+    .admin-content-inner { flex: 1; min-height: calc(100vh - 120px); min-width: 0; position: relative; overflow: hidden; }
   </style>
 </head>
 <body class="admin-page" data-required-role="admin">
@@ -53,11 +42,13 @@
       <!-- Right: section details -->
       <main class="admin-content">
         <div id="adminMessage" class="admin-message" style="display: none;"></div>
-
+        <div class="admin-content-inner">
         <!-- Employees & Users: grant login access + manage users -->
         <section id="panel-employees" class="admin-panel active">
+          <div class="page-container">
           <h2>Employees &amp; Users</h2>
           <p class="admin-desc">Grant app login access to staff. Add user (email, password, role) to create a Firebase Auth account; they can then sign in. Change role or remove access below.</p>
+          <div class="admin-section-card">
           <form id="addUserForm" class="form-row">
             <div class="form-group">
               <label for="newUserRef">Name / Employee ID</label>
@@ -86,18 +77,21 @@
           </form>
           <p class="admin-desc" style="margin-top: 0.5rem;">Remove only deletes from this app (Firestore). To delete the Firebase Auth account use Firebase Console or a backend.</p>
           <div id="userList"></div>
+          </div>
+          </div>
         </section>
 
         <!-- Add Employee: staff information only (no login) -->
         <section id="panel-add-employee" class="admin-panel">
+          <div class="page-container">
           <h2>Manage Employees</h2>
 
-          <div class="emp-section-filters" style="margin-bottom: 1.5rem; display: flex; gap: 10px;">
+          <div class="emp-section-filters" style="margin-bottom: 1.5rem; display: flex; gap: 12px;">
             <button type="button" class="btn btn-sm btn-primary emp-section-btn" data-target="block-add-employee-form">Add New Employee</button>
             <button type="button" class="btn btn-sm btn-outline emp-section-btn" data-target="block-employee-records">View Records</button>
           </div>
 
-          <div id="block-add-employee-form">
+          <div id="block-add-employee-form" class="admin-section-card">
             <p class="admin-desc">Add staff information only. This does not grant app login—use Employees & Users to give access. All staff records are stored here.</p>
             <form id="addEmployeeInfoForm" class="admin-form-stacked">
             <div class="form-row-2">
@@ -177,12 +171,12 @@
 
           <!-- Employee records: view all added employee information -->
 
-          <div id="block-employee-records" style="display: none;">
+          <div id="block-employee-records" class="admin-section-card" style="display: none;">
             <h3 class="form-section-title">Employee records</h3>
             <p class="admin-desc">View added employees. Use view options to see table or individual records.</p>
-            
           
           <div id="employeeRecordsList" class="employee-records-wrap"></div>
+          </div>
           </div>
 
           <!-- Employee Details Modal -->
@@ -202,10 +196,11 @@
         <!-- Payment rates: manage rates for machine operators, production, and daily wages -->
 
         <section id="panel-payment-rates" class="admin-panel">
+          <div class="page-container">
           <h2>Payment Rates</h2>
           <p class="admin-desc">Define rates for Machine Operators (fibres per meter), Productions (pay per product), and Daily (hourly wages). Stored in Firebase.</p>
 
-          <div class="rate-filters" style="margin-bottom: 1rem; display: flex; gap: 10px;">
+          <div class="rate-filters" style="margin-bottom: 1.5rem; display: flex; gap: 12px;">
             <button type="button" class="btn btn-sm btn-primary rate-filter-btn" data-target="block-machine">Machine Operators</button>
             <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-production">Productions</button>
             <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-daily">Daily Wages</button>
@@ -285,7 +280,9 @@
             </form>
             <div id="listDaily" class="rate-list"></div>
           </div>
+          </div>
         </section>
+        </div>
       </main>
     </div>
   </div>

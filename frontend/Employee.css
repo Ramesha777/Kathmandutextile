@@ -9,23 +9,30 @@
 
 body.employee-page {
   font-family: system-ui, -apple-system, sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
   color: var(--dark);
   padding: 0;
   margin: 0;
+  position: relative;
+  background: 
+    radial-gradient(ellipse 70% 50% at 100% 20%, rgba(34, 197, 94, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 0% 100%, rgba(59, 130, 246, 0.1), transparent),
+    linear-gradient(160deg, #ecfdf5 0%, #d1fae5 25%, #e0f2fe 60%, #f0f9ff 100%);
+  background-attachment: fixed;
 }
 
 .employee-wrap {
-  width: 100%;
+  width: calc(100% - 24px);
   max-width: 100%;
-  margin: 0;
+  margin: 12px auto;
   padding: 0;
   background: white;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - 24px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
 }
 
 .employee-header {
@@ -88,18 +95,35 @@ body.employee-page {
 
 .employee-content {
   flex: 1;
-  padding: 1.5rem;
-  overflow-x: auto;
-  max-width: 100%;
   min-height: 0;
+  padding: 1.5rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
 }
 
+.employee-content-inner {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Panels use position:absolute for uniform height - no resize on section switch */
 .employee-panel {
-  display: none;
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .employee-panel.active {
-  display: block;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .employee-panel h2 {

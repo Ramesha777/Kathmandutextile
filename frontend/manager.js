@@ -462,6 +462,16 @@ btnSave.addEventListener('click', async () => {
   const otPay = ot * (rate / 8) * 1.5;
   const net = wages + otPay + bonus - deduct;
 
+  // For Machine Operators: reduce inventory when item (e.g. Cotton) and qty are entered
+  const isMachineOps = (dept || '').toLowerCase().includes('machine');
+  if (isMachineOps && item && qty > 0) {
+    const invResult = await reduceInventoryForMachineOps(item, qty);
+    if (!invResult.success) {
+      showToast(invResult.message || 'Could not reduce inventory', 'error');
+      return;
+    }
+  }
+
   try {
     await addDoc(collection(db,'wageEntries'), {
       employeeId,
@@ -474,7 +484,7 @@ btnSave.addEventListener('click', async () => {
       recordedBy: auth.currentUser?.uid || null,
       createdAt: serverTimestamp()
     });
-    showToast('Wage entry saved');
+    showToast('Wage entry saved' + (isMachineOps && qty > 0 ? ' & inventory updated' : ''));
     clearWageForm();
     loadWageEntries(); // Refresh the table
   } catch (e) {
@@ -482,6 +492,46 @@ btnSave.addEventListener('click', async () => {
     showToast('Failed to save entry', 'error');
   }
 });
+
+/**
+ * Reduce inventory quantity when manager enters Machine Operators wage with an item (e.g. Cotton).
+ * Matches inventory by name (case-insensitive). Reduces from first matching item with sufficient quantity.
+ * @returns {{ success: boolean, message?: string }}
+ */
+async function reduceInventoryForMachineOps(itemName, qtyToReduce) {
+  if (!itemName || !(qtyToReduce > 0)) return { success: true };
+
+  const searchName = String(itemName).toLowerCase().trim();
+  const snap = await getDocs(collection(db, 'inventory'));
+  const matches = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((x) => (x.name || '').toLowerCase().trim() === searchName);
+
+  if (matches.length === 0) {
+    return { success: false, message: `No inventory found for "${itemName}". Add it first or check spelling.` };
+  }
+
+  // Find first item with sufficient quantity
+  const candidate = matches.find((x) => {
+    const qty = Number(x.quantity);
+    return !isNaN(qty) && qty >= qtyToReduce;
+  });
+
+  if (!candidate) {
+    const total = matches.reduce((sum, x) => sum + (Number(x.quantity) || 0), 0);
+    return {
+      success: false,
+      message: `Insufficient inventory for ${itemName}. Available: ${total} ${matches[0].unit || ''}`,
+    };
+  }
+
+  const currentQty = Number(candidate.quantity) || 0;
+  const newQty = currentQty - qtyToReduce;
+  await updateDoc(doc(db, 'inventory', candidate.id), {
+    quantity: newQty,
+  });
+  return { success: true };
+}
 
 async function loadManagerUserNameMap() {
   try {

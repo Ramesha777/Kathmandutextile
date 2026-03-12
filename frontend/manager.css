@@ -15,21 +15,30 @@
 
 body.manager-page {
   font-family: system-ui, -apple-system, sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
   color: var(--dark);
   padding: 0;
   margin: 0;
+  position: relative;
+  background: 
+    radial-gradient(ellipse 80% 50% at 0% 0%, rgba(167, 139, 250, 0.12), transparent 50%),
+    radial-gradient(ellipse 70% 45% at 100% 100%, rgba(99, 102, 241, 0.1), transparent),
+    linear-gradient(145deg, #faf5ff 0%, #f5f3ff 30%, #eef2ff 60%, #f8fafc 100%);
+  background-attachment: fixed;
 }
 
 .manager-wrap {
+  width: calc(100% - 24px);
   max-width: 100%;
-  margin: 0 auto;
+  margin: 12px auto;
   background: white;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - 24px);
+  min-height: calc(100vh - 24px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
 }
 
 .manager-header {
@@ -51,6 +60,8 @@ body.manager-page {
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  width: 100%;
 }
 
 .manager-sidebar {
@@ -93,16 +104,37 @@ body.manager-page {
 
 .manager-content {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   padding: 2rem;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
+.manager-content-inner {
+  flex: 1;
+  min-height: calc(100vh - 120px);
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Panels use position:absolute for uniform height - no resize on section switch */
 .manager-panel {
-  display: none;
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .manager-panel.active {
-  display: block;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .manager-panel h2 {
