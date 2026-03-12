@@ -1,5 +1,23 @@
-- [x] Inspect admin employee records "View" flow and identify root cause
-- [x] Fix modal element binding and event wiring in `frontend/Admin.js`
-- [x] Fix admin script include case mismatch in `frontend/admin.html`
-- [x] Verify no stale modal ID references remain
-- [x] Mark all tasks complete
+- [x] Add category filter UI in `frontend/employee.html` for View All Inventory panel
+- [x] Update `frontend/Employee.js` to:
+  - [x] Load inventory once and derive category options
+  - [x] Filter inventory table by selected category
+  - [x] Hide vendor details for production inventory rows
+  - [x] Re-render table on filter change
+- [x] Add manager inventory and damage reports access:
+  - [x] Update `frontend/Manager.html` nav with Inventory and Damage Reports sections
+  - [x] Add manager panels for inventory and damage reports
+  - [x] Update `frontend/manager.js` to load and render inventory
+  - [x] Add category filter support in manager inventory view
+  - [x] Hide vendor details for production/finished product in manager inventory view
+  - [x] Update `frontend/manager.js` to load and render damage reports
+- [ ] Add manager edit/delete actions:
+  - [ ] Add Firestore update/delete imports in `frontend/manager.js`
+  - [ ] Add inventory action buttons (Edit/Delete)
+  - [ ] Add damage report action buttons (Edit/Delete)
+  - [ ] Implement inventory edit flow
+  - [ ] Implement damage report edit flow
+  - [ ] Implement inventory delete flow
+  - [ ] Implement damage report delete flow
+  - [ ] Refresh lists after changes
+- [ ] Verify behavior and mark tasks complete

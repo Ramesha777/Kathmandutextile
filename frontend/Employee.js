@@ -25,6 +25,7 @@ const storageSelect = document.getElementById("invStorageArea");
 const storageOther = document.getElementById("invStorageOther");
 const logoutBtn = document.getElementById("logoutBtn");
 const inventoryListEl = document.getElementById("inventoryList");
+const inventoryCategoryFilterEl = document.getElementById("inventoryCategoryFilter");
 const damageReportsListEl = document.getElementById("damageReportsList");
 
 // Utility functions
@@ -120,6 +121,7 @@ if (inventoryForm) {
         expiryDate: expiryDate || null,
         storageArea: storageArea || null,
         createdBy: auth.currentUser?.uid || null,
+        createdByName: auth.currentUser?.displayName || auth.currentUser?.uid || null,
         createdAt: serverTimestamp()
       });
       showMessage("Inventory item added successfully.");
@@ -165,6 +167,7 @@ if (problemForm) {
         unit: unit || null,
         explanation,
         reportedBy: auth.currentUser?.uid || null,
+        reportedByName: auth.currentUser?.displayName || auth.currentUser?.uid || null,
         reportedAt: serverTimestamp()
       });
       showMessage("Problem report submitted successfully.");
@@ -195,6 +198,113 @@ if (logoutBtn) {
 
 // ─── View All Inventory ───
 
+let allInventoryItems = [];
+let userNameByUid = {};
+
+async function loadUserNameMap() {
+  try {
+    const snap = await getDocs(collection(db, "users"));
+    const map = {};
+    snap.forEach((d) => {
+      const u = d.data() || {};
+      const resolved = u.displayName || u.fullName || u.name || d.id || "Unknown";
+    });
+    userNameByUid = map;
+  } catch (err) {
+    console.warn("Failed to load user map:", err);
+    userNameByUid = {};
+  }
+}
+
+function resolveReporterName(nameField, uidField) {
+  if (nameField && String(nameField).trim()) return String(nameField).trim();
+  if (uidField && userNameByUid[uidField]) return userNameByUid[uidField];
+  return "Unknown";
+}
+
+function normalizeCategory(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isProductionInventoryCategory(value) {
+  const c = normalizeCategory(value);
+  return c === "production" || c === "finished product";
+}
+
+function populateCategoryFilter(items) {
+  if (!inventoryCategoryFilterEl) return;
+  const currentValue = inventoryCategoryFilterEl.value || "";
+  const categories = [...new Set(items.map((x) => String(x.category || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+
+  let options = `<option value="">All categories</option>`;
+  for (const c of categories) {
+    options += `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`;
+  }
+  inventoryCategoryFilterEl.innerHTML = options;
+
+  if (currentValue && categories.includes(currentValue)) {
+    inventoryCategoryFilterEl.value = currentValue;
+  }
+}
+
+function renderInventoryTable() {
+  if (!inventoryListEl) return;
+  const selectedCategory = inventoryCategoryFilterEl?.value || "";
+  const visibleItems = selectedCategory
+    ? allInventoryItems.filter((x) => String(x.category || "").trim() === selectedCategory)
+    : allInventoryItems;
+
+  if (visibleItems.length === 0) {
+    inventoryListEl.innerHTML = "<p class='empty-msg'>No inventory items for selected category.</p>";
+    return;
+  }
+
+  let html = `
+    <table class="emp-table">
+      <thead>
+        <tr>
+          <th>Barcode/ID</th>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Qty</th>
+          <th>Unit</th>
+          <th>Vendor</th>
+          <th>Vendor contact</th>
+          <th>Purchase date</th>
+          <th>Expiry date</th>
+          <th>Storage area</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  for (const x of visibleItems) {
+    const purchaseDate = x.purchaseDate || "—";
+    const expiryDate = x.expiryDate || "—";
+    const qty = x.quantity != null ? x.quantity : "—";
+    const unit = x.unit || x.units || "—";
+    const hideVendor = isProductionInventoryCategory(x.category);
+
+    html += `
+      <tr>
+        <td>${escapeHtml(x.barcode)}</td>
+        <td>${escapeHtml(x.name)}</td>
+        <td>${escapeHtml(x.category)}</td>
+        <td>${escapeHtml(qty)}</td>
+        <td>${escapeHtml(unit)}</td>
+        <td>${escapeHtml(hideVendor ? "—" : (x.vendorName || "—"))}</td>
+        <td>${escapeHtml(hideVendor ? "—" : (x.vendorContact || "—"))}</td>
+        <td>${escapeHtml(purchaseDate)}</td>
+        <td>${escapeHtml(expiryDate)}</td>
+        <td>${escapeHtml(x.storageArea || "—")}</td>
+      </tr>
+    `;
+  }
+
+  html += "</tbody></table>";
+  inventoryListEl.innerHTML = html;
+}
 
 async function loadInventoryList() {
   if (!inventoryListEl) return;
@@ -204,53 +314,25 @@ async function loadInventoryList() {
     const items = [];
     snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
     items.sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+
+    allInventoryItems = items;
+    populateCategoryFilter(items);
+
     if (items.length === 0) {
       inventoryListEl.innerHTML = "<p class='empty-msg'>No inventory items yet.</p>";
       return;
     }
-    let html = `
-      <table class="emp-table">
-        <thead>
-          <tr>
-            <th>Barcode/ID</th>
-            <th>Name</th>
-            <th>Category</th>
-            <th>Qty</th>
-            <th>Unit</th>
-            <th>Vendor</th>
-            <th>Vendor contact</th>
-            <th>Purchase date</th>
-            <th>Expiry date</th>
-            <th>Storage area</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-    for (const x of items) {
-      const purchaseDate = x.purchaseDate || "—";
-      const expiryDate = x.expiryDate || "—";
-      const qty = x.quantity != null ? x.quantity : "—";
-      const unit = x.unit || x.units || "—";
-      html += `
-        <tr>
-          <td>${escapeHtml(x.barcode)}</td>
-          <td>${escapeHtml(x.name)}</td>
-          <td>${escapeHtml(x.category)}</td>
-          <td>${escapeHtml(qty)}</td>
-          <td>${escapeHtml(unit)}</td>
-          <td>${escapeHtml(x.vendorName || "—")}</td>
-          <td>${escapeHtml(x.vendorContact || "—")}</td>
-          <td>${escapeHtml(purchaseDate)}</td>
-          <td>${escapeHtml(expiryDate)}</td>
-          <td>${escapeHtml(x.storageArea || "—")}</td>
-        </tr>
-      `;
-    }
-    html += "</tbody></table>";
-    inventoryListEl.innerHTML = html;
+
+    renderInventoryTable();
   } catch (err) {
     inventoryListEl.innerHTML = "<p class='error'>Failed to load inventory: " + escapeHtml(err.message || err) + "</p>";
   }
+}
+
+if (inventoryCategoryFilterEl) {
+  inventoryCategoryFilterEl.addEventListener("change", () => {
+    renderInventoryTable();
+  });
 }
 
 
@@ -279,7 +361,6 @@ async function loadDamageReports() {
             <th>Unit</th>
             <th>Explanation</th>
             <th>Reported at</th>
-            <th>Reported by</th>
           </tr>
         </thead>
         <tbody>
@@ -301,7 +382,6 @@ async function loadDamageReports() {
           <td>${escapeHtml(unit)}</td>
           <td>${escapeHtml(x.explanation)}</td>
           <td>${escapeHtml(reportedAt)}</td>
-          <td>${escapeHtml(x.reportedBy || "—")}</td>
         </tr>
       `;
     }
@@ -313,6 +393,8 @@ async function loadDamageReports() {
 }
 
 // Nav: switch section
+
+loadUserNameMap();
 
 document.querySelectorAll(".employee-nav-link").forEach((a) => {
   a.addEventListener("click", (e) => {

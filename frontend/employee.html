@@ -65,6 +65,7 @@
                 <option value="raw materials">Raw materials</option>
                 <option value="electronic goods">Electronic goods</option>
                 <option value="finished product">Finished product</option>
+                <option value="Fibre">Fibre</option>
               </select>
             </div>
 
@@ -171,6 +172,12 @@
         <section id="panel-view-inventory" class="employee-panel">
           <h2>View All Inventory</h2>
           <p class="section-desc">All inventory items added to the system.</p>
+          <div class="form-group" style="max-width: 320px; margin-bottom: 1rem;">
+            <label for="inventoryCategoryFilter">Filter by category</label>
+            <select id="inventoryCategoryFilter">
+              <option value="">All categories</option>
+            </select>
+          </div>
           <div id="inventoryList" class="emp-list"></div>
         </section>
 

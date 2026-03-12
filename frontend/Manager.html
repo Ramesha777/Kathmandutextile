@@ -47,6 +47,8 @@
           <li><a role="button" tabindex="0" class="manager-nav-link active" data-section="wages">💵 Wage Entry</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="employees">🧑‍🤝‍🧑Employees</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="slips"> Payslips</a></li>
+          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="inventory">📦 Inventory</a></li>
+          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="damage-reports">⚠️ Damage Reports</a></li>
         </ul>
       </nav>
 
@@ -211,6 +213,26 @@
             <h3>Summary — <span id="summary-month"></span></h3>
             <div id="summary-content"></div>
           </div>
+        </section>
+
+        <!-- Inventory Section -->
+        <section id="panel-inventory" class="manager-panel">
+          <h2>Inventory</h2>
+          <p class="manager-desc">View all inventory items with category filter.</p>
+          <div class="form-group" style="max-width: 320px; margin-bottom: 1rem;">
+            <label for="managerInventoryCategoryFilter">Filter by category</label>
+            <select id="managerInventoryCategoryFilter">
+              <option value="">All categories</option>
+            </select>
+          </div>
+          <div id="managerInventoryList"></div>
+        </section>
+
+        <!-- Damage Reports Section -->
+        <section id="panel-damage-reports" class="manager-panel">
+          <h2>Damage Reports</h2>
+          <p class="manager-desc">View all product problem / damage reports submitted.</p>
+          <div id="managerDamageReportsList"></div>
         </section>
       </main>
     </div>

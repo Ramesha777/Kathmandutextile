@@ -1,7 +1,7 @@
 // manager.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
 const app = initializeApp(firebaseConfig);
@@ -38,6 +38,12 @@ const selSlipEmployee = document.getElementById('slip-employee');
 const selSlipMonth = document.getElementById('slip-month');
 const btnPreviewSlip = document.getElementById('btn-preview-slip');
 const btnDownloadSlip = document.getElementById('btn-download-slip');
+const managerInventoryListEl = document.getElementById('managerInventoryList');
+const managerInventoryCategoryFilterEl = document.getElementById('managerInventoryCategoryFilter');
+const managerDamageReportsListEl = document.getElementById('managerDamageReportsList');
+
+let managerInventoryItems = [];
+let managerUserNameByUid = {};
 
 // Employee search elements
 const employeeSearchInput = document.getElementById('employee-search');
@@ -69,6 +75,13 @@ navItems.forEach(it => {
     document.querySelectorAll('.manager-panel').forEach(panel => panel.classList.remove('active'));
     const section = it.dataset.section;
     document.getElementById('panel-' + section).classList.add('active');
+
+    if (section === 'inventory') {
+      loadManagerInventory();
+    }
+    if (section === 'damage-reports') {
+      loadManagerDamageReports();
+    }
   });
 });
 
@@ -470,6 +483,337 @@ btnSave.addEventListener('click', async () => {
   }
 });
 
+async function loadManagerUserNameMap() {
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    const map = {};
+    snap.forEach((d) => {
+      const u = d.data() || {};
+      const resolved = u.displayName || u.fullName || u.name || u.email || 'Unknown';
+      map[d.id] = String(resolved).trim() || 'Unknown';
+    });
+    managerUserNameByUid = map;
+  } catch (err) {
+    console.warn('Failed to load user map:', err);
+    managerUserNameByUid = {};
+  }
+}
+
+function resolveUserDisplayName(nameField, uidField) {
+  if (nameField && String(nameField).trim()) return String(nameField).trim();
+  if (uidField && managerUserNameByUid[uidField]) return managerUserNameByUid[uidField];
+  return 'Unknown';
+}
+
+function normalizeCategory(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isProductionInventoryCategory(value) {
+  const c = normalizeCategory(value);
+  return c === 'production' || c === 'finished product';
+}
+
+function populateManagerCategoryFilter(items) {
+  if (!managerInventoryCategoryFilterEl) return;
+  const current = managerInventoryCategoryFilterEl.value || '';
+  const categories = [...new Set(items.map((x) => String(x.category || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+
+  let options = `<option value="">All categories</option>`;
+  categories.forEach((c) => {
+    options += `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`;
+  });
+  managerInventoryCategoryFilterEl.innerHTML = options;
+
+  if (current && categories.includes(current)) {
+    managerInventoryCategoryFilterEl.value = current;
+  }
+}
+
+function renderManagerInventoryTable() {
+  if (!managerInventoryListEl) return;
+
+  const selectedCategory = managerInventoryCategoryFilterEl?.value || '';
+  const visibleItems = selectedCategory
+    ? managerInventoryItems.filter((x) => String(x.category || '').trim() === selectedCategory)
+    : managerInventoryItems;
+
+  if (!visibleItems.length) {
+    managerInventoryListEl.innerHTML = "<p class='empty-msg'>No inventory items for selected category.</p>";
+    return;
+  }
+
+  let html = `
+    <table class="manager-table">
+      <thead>
+        <tr>
+          <th>Barcode/ID</th>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Qty</th>
+          <th>Unit</th>
+          <th>Vendor</th>
+          <th>Vendor contact</th>
+          <th>Purchase date</th>
+          <th>Expiry date</th>
+          <th>Storage area</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  visibleItems.forEach((x) => {
+    const qty = x.quantity != null ? x.quantity : '—';
+    const unit = x.unit || x.units || '—';
+    const purchaseDate = x.purchaseDate || '—';
+    const expiryDate = x.expiryDate || '—';
+    const hideVendor = isProductionInventoryCategory(x.category);
+
+    html += `
+      <tr>
+        <td>${escapeHtml(x.barcode)}</td>
+        <td>${escapeHtml(x.name)}</td>
+        <td>${escapeHtml(x.category)}</td>
+        <td>${escapeHtml(qty)}</td>
+        <td>${escapeHtml(unit)}</td>
+        <td>${escapeHtml(hideVendor ? '—' : (x.vendorName || '—'))}</td>
+        <td>${escapeHtml(hideVendor ? '—' : (x.vendorContact || '—'))}</td>
+        <td>${escapeHtml(purchaseDate)}</td>
+        <td>${escapeHtml(expiryDate)}</td>
+        <td>${escapeHtml(x.storageArea || '—')}</td>
+        <td>
+          <button type="button" class="btn btn-sm btn-outline manager-edit-inventory" data-id="${escapeHtml(x.id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-primary manager-delete-inventory" data-id="${escapeHtml(x.id)}">Delete</button>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `</tbody></table>`;
+  managerInventoryListEl.innerHTML = html;
+}
+
+async function loadManagerInventory() {
+  if (!managerInventoryListEl) return;
+  managerInventoryListEl.innerHTML = "<p class='loading-msg'>Loading inventory…</p>";
+  try {
+    const snap = await getDocs(collection(db, 'inventory'));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    items.sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+
+    managerInventoryItems = items;
+    populateManagerCategoryFilter(items);
+
+    if (!items.length) {
+      managerInventoryListEl.innerHTML = "<p class='empty-msg'>No inventory items yet.</p>";
+      return;
+    }
+
+    renderManagerInventoryTable();
+  } catch (err) {
+    console.error(err);
+    managerInventoryListEl.innerHTML = `<p class='error'>Failed to load inventory: ${escapeHtml(err.message || err)}</p>`;
+  }
+}
+
+async function loadManagerDamageReports() {
+  if (!managerDamageReportsListEl) return;
+  managerDamageReportsListEl.innerHTML = "<p class='loading-msg'>Loading damage reports…</p>";
+  try {
+    const snap = await getDocs(collection(db, 'problem_reports'));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    items.sort((a, b) => (b.reportedAt?.toMillis?.() ?? 0) - (a.reportedAt?.toMillis?.() ?? 0));
+
+    if (!items.length) {
+      managerDamageReportsListEl.innerHTML = "<p class='empty-msg'>No damage reports yet.</p>";
+      return;
+    }
+
+    let html = `
+      <table class="manager-table">
+        <thead>
+          <tr>
+            <th>Barcode/ID</th>
+            <th>Product name</th>
+            <th>Qty</th>
+            <th>Unit</th>
+            <th>Explanation</th>
+            <th>Reported at</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    items.forEach((x) => {
+      let reportedAt = '—';
+      if (x.reportedAt?.toDate) {
+        try {
+          reportedAt = x.reportedAt.toDate().toLocaleString();
+        } catch (_) {}
+      }
+      const qty = x.quantity != null ? x.quantity : '—';
+      const unit = x.unit || x.units || '—';
+
+      html += `
+        <tr>
+          <td>${escapeHtml(x.barcode)}</td>
+          <td>${escapeHtml(x.name)}</td>
+          <td>${escapeHtml(qty)}</td>
+          <td>${escapeHtml(unit)}</td>
+          <td>${escapeHtml(x.explanation)}</td>
+          <td>${escapeHtml(reportedAt)}</td>
+          <td>
+            <button type="button" class="btn btn-sm btn-outline manager-edit-damage" data-id="${escapeHtml(x.id)}">Edit</button>
+            <button type="button" class="btn btn-sm btn-primary manager-delete-damage" data-id="${escapeHtml(x.id)}">Delete</button>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += '</tbody></table>';
+    managerDamageReportsListEl.innerHTML = html;
+  } catch (err) {
+    console.error(err);
+    managerDamageReportsListEl.innerHTML = `<p class='error'>Failed to load damage reports: ${escapeHtml(err.message || err)}</p>`;
+  }
+}
+
+if (managerInventoryCategoryFilterEl) {
+  managerInventoryCategoryFilterEl.addEventListener('change', renderManagerInventoryTable);
+}
+
+if (managerInventoryListEl) {
+  managerInventoryListEl.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest('.manager-edit-inventory');
+    const delBtn = e.target.closest('.manager-delete-inventory');
+
+    if (editBtn) {
+      const id = editBtn.getAttribute('data-id');
+      const item = managerInventoryItems.find((x) => x.id === id);
+      if (!item) return;
+
+      const name = prompt('Name:', item.name || '');
+      if (name === null) return;
+      const category = prompt('Category:', item.category || '');
+      if (category === null) return;
+      const quantityRaw = prompt('Quantity:', item.quantity != null ? String(item.quantity) : '');
+      if (quantityRaw === null) return;
+      const unit = prompt('Unit:', item.unit || '');
+      if (unit === null) return;
+      const vendorName = prompt('Vendor name:', item.vendorName || '');
+      if (vendorName === null) return;
+      const vendorContact = prompt('Vendor contact:', item.vendorContact || '');
+      if (vendorContact === null) return;
+      const purchaseDate = prompt('Purchase date (YYYY-MM-DD):', item.purchaseDate || '');
+      if (purchaseDate === null) return;
+      const expiryDate = prompt('Expiry date (YYYY-MM-DD):', item.expiryDate || '');
+      if (expiryDate === null) return;
+      const storageArea = prompt('Storage area:', item.storageArea || '');
+      if (storageArea === null) return;
+
+      const quantity = quantityRaw.trim() === '' ? null : Number(quantityRaw);
+      if (quantityRaw.trim() !== '' && Number.isNaN(quantity)) {
+        showToast('Invalid quantity', 'error');
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'inventory', id), {
+          name: name.trim(),
+          category: category.trim(),
+          quantity,
+          unit: unit.trim() || null,
+          vendorName: vendorName.trim() || null,
+          vendorContact: vendorContact.trim() || null,
+          purchaseDate: purchaseDate.trim() || null,
+          expiryDate: expiryDate.trim() || null,
+          storageArea: storageArea.trim() || null
+        });
+        showToast('Inventory updated');
+        await loadManagerInventory();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to update inventory', 'error');
+      }
+    }
+
+    if (delBtn) {
+      const id = delBtn.getAttribute('data-id');
+      if (!confirm('Delete this inventory item permanently?')) return;
+
+      try {
+        await deleteDoc(doc(db, 'inventory', id));
+        showToast('Inventory deleted');
+        await loadManagerInventory();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to delete inventory', 'error');
+      }
+    }
+  });
+}
+
+if (managerDamageReportsListEl) {
+  managerDamageReportsListEl.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest('.manager-edit-damage');
+    const delBtn = e.target.closest('.manager-delete-damage');
+
+    if (editBtn) {
+      const id = editBtn.getAttribute('data-id');
+      try {
+        const snap = await getDocs(collection(db, 'problem_reports'));
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const report = items.find((x) => x.id === id);
+        if (!report) return;
+
+        const name = prompt('Product name:', report.name || '');
+        if (name === null) return;
+        const quantityRaw = prompt('Quantity:', report.quantity != null ? String(report.quantity) : '');
+        if (quantityRaw === null) return;
+        const unit = prompt('Unit:', report.unit || '');
+        if (unit === null) return;
+        const explanation = prompt('Explanation:', report.explanation || '');
+        if (explanation === null) return;
+
+        const quantity = quantityRaw.trim() === '' ? null : Number(quantityRaw);
+        if (quantityRaw.trim() !== '' && Number.isNaN(quantity)) {
+          showToast('Invalid quantity', 'error');
+          return;
+        }
+
+        await updateDoc(doc(db, 'problem_reports', id), {
+          name: name.trim(),
+          quantity,
+          unit: unit.trim() || null,
+          explanation: explanation.trim()
+        });
+        showToast('Damage report updated');
+        await loadManagerDamageReports();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to update damage report', 'error');
+      }
+    }
+
+    if (delBtn) {
+      const id = delBtn.getAttribute('data-id');
+      if (!confirm('Delete this damage report permanently?')) return;
+
+      try {
+        await deleteDoc(doc(db, 'problem_reports', id));
+        showToast('Damage report deleted');
+        await loadManagerDamageReports();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to delete damage report', 'error');
+      }
+    }
+  });
+}
+
 function clearWageForm() {
   inpEmployee.value = '';
   inpEmployeeId.value = '';
@@ -571,7 +915,7 @@ btnDownloadSlip.addEventListener('click', async () => {
 
 // init
 (async function(){
-  await Promise.all([loadEmployees(), loadRates()]);
+  await Promise.all([loadEmployees(), loadRates(), loadManagerUserNameMap()]);
   // set default date
   if (inpDate) inpDate.valueAsDate = new Date();
   // Load wage entries table

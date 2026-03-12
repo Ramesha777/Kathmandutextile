@@ -30,12 +30,16 @@ const userListEl = document.getElementById("userList");
 const employeeRecordsListEl = document.getElementById("employeeRecordsList");
 const adminMessage = document.getElementById("adminMessage");
 const logoutBtn = document.getElementById("logoutBtn");
+const newUserRefInput = document.getElementById("newUserRef");
+const employeeUserRefList = document.getElementById("employeeUserRefList");
+const newEmailInput = document.getElementById("newEmail");
 
 let allEmployeesData = [];
 let allUsersData = [];
 let currentEmployeeDeptFilter = "";
 let editingEmployeeId = null;
 let modalConfirmCallback = null;
+let employeeUserAccessLookup = [];
 
 // Employee modal elements
 let employeeModal = null;
@@ -124,6 +128,56 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str == null ? "" : String(str);
   return div.innerHTML;
+}
+
+async function loadEmployeeUserRefs() {
+  try {
+    const snap = await getDocs(collection(db, "employees"));
+    employeeUserAccessLookup = snap.docs.map((d) => {
+      const data = d.data() || {};
+      return {
+        id: d.id,
+        fullName: (data.fullName || "").trim(),
+        email: (data.email || "").trim()
+      };
+    });
+
+    if (employeeUserRefList) {
+      const options = employeeUserAccessLookup.map((e) => {
+        const label = e.fullName ? `${e.fullName} (${e.id})` : e.id;
+        return `<option value="${escapeHtml(label)}"></option>`;
+      });
+      employeeUserRefList.innerHTML = options.join("");
+    }
+  } catch (err) {
+    console.error("Failed to load employee references:", err);
+  }
+}
+
+function resolveEmployeeFromRef(rawValue) {
+  const value = String(rawValue || "").trim();
+  if (!value) return null;
+
+  const idMatch = value.match(/\(([^()]+)\)\s*$/);
+  const extractedId = idMatch ? idMatch[1].trim() : null;
+
+  let found = null;
+  if (extractedId) {
+    found = employeeUserAccessLookup.find((e) => e.id === extractedId) || null;
+    if (found) return found;
+  }
+
+  found = employeeUserAccessLookup.find((e) => e.id === value) || null;
+  if (found) return found;
+
+  found = employeeUserAccessLookup.find((e) => e.fullName.toLowerCase() === value.toLowerCase()) || null;
+  return found || null;
+}
+
+function autofillUserEmailFromEmployeeRef() {
+  if (!newUserRefInput || !newEmailInput) return;
+  const found = resolveEmployeeFromRef(newUserRefInput.value);
+  newEmailInput.value = found?.email || "";
 }
 
 async function updateRole(uid, newRole) {
@@ -708,6 +762,138 @@ const COLLECTION_MACHINE_OPS = "rates_machineOperators";
 const COLLECTION_PRODUCTIONS = "rates_productions";
 const COLLECTION_DAILY = "rates_daily";
 
+function normalizeText(v) {
+  return String(v == null ? "" : v).trim();
+}
+
+function isFibreCategory(category) {
+  const c = normalizeText(category).toLowerCase();
+  return c === "fiber" || c === "fibre";
+}
+
+function isFinishedProductCategory(category) {
+  const c = normalizeText(category).toLowerCase();
+  return c === "finished product";
+}
+
+async function loadFibreOptionsFromInventory() {
+  const fibreSelect = document.getElementById("fibreName");
+  if (!fibreSelect) return;
+
+  const currentValue = fibreSelect.value;
+  try {
+    const snap = await getDocs(collection(db, "inventory"));
+    const namesSet = new Set();
+    snap.forEach((d) => {
+      const item = d.data() || {};
+      if (!isFibreCategory(item.category)) return;
+      const n = normalizeText(item.name);
+      if (n) namesSet.add(n);
+    });
+
+    const names = Array.from(namesSet).sort((a, b) => a.localeCompare(b));
+    const options = [
+      `<option value="">Select fibre</option>`,
+      ...names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`),
+      `<option value="__other__">Other (type manually)</option>`
+    ];
+    fibreSelect.innerHTML = options.join("");
+
+    const shouldKeep = names.includes(currentValue) || currentValue === "__other__" || currentValue === "";
+    fibreSelect.value = shouldKeep ? currentValue : "";
+  } catch (err) {
+    console.error("Failed to load fibre inventory options:", err);
+    fibreSelect.innerHTML = `
+      <option value="">Select fibre</option>
+      <option value="__other__">Other (type manually)</option>
+    `;
+  }
+
+  toggleOtherFibreInput();
+}
+
+function toggleOtherFibreInput() {
+  const fibreSelect = document.getElementById("fibreName");
+  const otherWrap = document.getElementById("fibreNameOtherWrap");
+  const otherInput = document.getElementById("fibreNameOther");
+  if (!fibreSelect || !otherWrap || !otherInput) return;
+
+  const isOther = fibreSelect.value === "__other__";
+  otherWrap.style.display = isOther ? "block" : "none";
+  otherInput.required = isOther;
+  if (!isOther) otherInput.value = "";
+}
+
+function getSelectedFibreName() {
+  const fibreSelect = document.getElementById("fibreName");
+  const otherInput = document.getElementById("fibreNameOther");
+  if (!fibreSelect) return "";
+
+  if (fibreSelect.value === "__other__") {
+    return normalizeText(otherInput?.value);
+  }
+  return normalizeText(fibreSelect.value);
+}
+
+async function loadProductOptionsFromInventory() {
+  const productSelect = document.getElementById("productName");
+  if (!productSelect) return;
+
+  const currentValue = productSelect.value;
+  try {
+    const snap = await getDocs(collection(db, "inventory"));
+    const namesSet = new Set();
+    snap.forEach((d) => {
+      const item = d.data() || {};
+      if (!isFinishedProductCategory(item.category)) return;
+      const n = normalizeText(item.name);
+      if (n) namesSet.add(n);
+    });
+
+    const names = Array.from(namesSet).sort((a, b) => a.localeCompare(b));
+    const options = [
+      `<option value="">Select product</option>`,
+      ...names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`),
+      `<option value="__other__">Other (type manually)</option>`
+    ];
+    productSelect.innerHTML = options.join("");
+
+    const shouldKeep = names.includes(currentValue) || currentValue === "__other__" || currentValue === "";
+    productSelect.value = shouldKeep ? currentValue : "";
+  } catch (err) {
+    console.error("Failed to load finished-product options:", err);
+    productSelect.innerHTML = `
+      <option value="">Select product</option>
+      <option value="__other__">Other (type manually)</option>
+    `;
+  }
+
+  toggleOtherProductInput();
+}
+
+function toggleOtherProductInput() {
+  const productSelect = document.getElementById("productName");
+  const otherWrap = document.getElementById("productNameOtherWrap");
+  const otherInput = document.getElementById("productNameOther");
+  if (!productSelect || !otherWrap || !otherInput) return;
+
+  const isOther = productSelect.value === "__other__";
+  otherWrap.style.display = isOther ? "block" : "none";
+  otherInput.required = isOther;
+  if (!isOther) otherInput.value = "";
+}
+
+function getSelectedProductName() {
+  const productSelect = document.getElementById("productName");
+  const otherInput = document.getElementById("productNameOther");
+  if (!productSelect) return "";
+
+  if (productSelect.value === "__other__") {
+    return normalizeText(otherInput?.value);
+  }
+  return normalizeText(productSelect.value);
+}
+
 async function loadRates(collectionName) {
   const snap = await getDocs(collection(db, collectionName));
   const items = [];
@@ -861,7 +1047,11 @@ async function addMachineOp(name, ratePerMeter) {
     showMessage("Fibre rate added.");
     document.getElementById("fibreName").value = "";
     document.getElementById("fibreRate").value = "";
+    const otherInput = document.getElementById("fibreNameOther");
+    if (otherInput) otherInput.value = "";
+    toggleOtherFibreInput();
     loadAllRates();
+    loadFibreOptionsFromInventory();
   } catch (err) {
     showMessage("Failed to add: " + (err.message || err), true);
   }
@@ -882,7 +1072,11 @@ async function addProduction(name, ratePerPiece) {
     showMessage("Product rate added.");
     document.getElementById("productName").value = "";
     document.getElementById("productRate").value = "";
+    const otherInput = document.getElementById("productNameOther");
+    if (otherInput) otherInput.value = "";
+    toggleOtherProductInput();
     loadAllRates();
+    loadProductOptionsFromInventory();
   } catch (err) {
     showMessage("Failed to add: " + (err.message || err), true);
   }
@@ -912,6 +1106,9 @@ function init() {
   createModal();
   loadUsers();
   loadAllRates();
+  loadFibreOptionsFromInventory();
+  loadProductOptionsFromInventory();
+  loadEmployeeUserRefs();
 
   document.querySelectorAll(".admin-nav-link").forEach((a) => {
     a.addEventListener("click", (e) => {
@@ -981,10 +1178,24 @@ function init() {
     });
   });
 
+  if (newUserRefInput) {
+    newUserRefInput.addEventListener("input", autofillUserEmailFromEmployeeRef);
+    newUserRefInput.addEventListener("change", autofillUserEmailFromEmployeeRef);
+  }
+
   if (addUserForm) {
     addUserForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const email = document.getElementById("newEmail")?.value?.trim();
+      const found = resolveEmployeeFromRef(document.getElementById("newUserRef")?.value);
+      if (!found) {
+        showMessage("Please select a valid employee Name/ID from records.", true);
+        return;
+      }
+      if (!found.email) {
+        showMessage("Selected employee does not have an email in records.", true);
+        return;
+      }
+      const email = found.email.trim();
       const password = document.getElementById("newPassword")?.value;
       const role = document.getElementById("newRole")?.value;
       addUser(email, password, role);
@@ -998,13 +1209,21 @@ function init() {
     });
   }
 
+  document.getElementById("fibreName")?.addEventListener("change", () => {
+    toggleOtherFibreInput();
+  });
+
   document.getElementById("formMachineOps")?.addEventListener("submit", (e) => {
     e.preventDefault();
-    addMachineOp(document.getElementById("fibreName")?.value?.trim(), document.getElementById("fibreRate")?.value);
+    addMachineOp(getSelectedFibreName(), document.getElementById("fibreRate")?.value);
   });
+  document.getElementById("productName")?.addEventListener("change", () => {
+    toggleOtherProductInput();
+  });
+
   document.getElementById("formProductions")?.addEventListener("submit", (e) => {
     e.preventDefault();
-    addProduction(document.getElementById("productName")?.value?.trim(), document.getElementById("productRate")?.value);
+    addProduction(getSelectedProductName(), document.getElementById("productRate")?.value);
   });
   document.getElementById("formDaily")?.addEventListener("submit", (e) => {
     e.preventDefault();
