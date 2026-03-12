@@ -105,7 +105,7 @@
               <input type="number" id="wage-deduct" min="0" value="0">
             </div>
 
-            <div class="form-actions" style="grid-column: 1 / -1; display:flex; gap:10px;">
+            <div class="form-actions" style="grid-column: 1 / -1; display:flex; gap: 12px; justify-content: flex-start; margin-top: 1rem;">
               <button type="button" id="btn-save-wage" class="btn btn-primary">Save Entry</button>
               <button type="button" id="btn-clear-wage" class="btn btn-outline">Clear</button>
             </div>
@@ -192,6 +192,7 @@
             <div class="form-group" style="align-self:flex-end;">
               <button id="btn-preview-slip" class="btn btn-primary">Preview</button>
               <button id="btn-download-slip" class="btn btn-outline">Download PDF</button>
+              <button id="btn-share-slip" class="btn btn-outline">Share</button>
             </div>
           </div>
           <div id="slip-summary" style="display:none; margin-top: 1rem;" aria-hidden>
@@ -199,6 +200,25 @@
             <div id="summary-content"></div>
           </div>
         </section>
+
+        <!-- Share Modal -->
+        <div id="share-modal" class="modal-overlay" style="display: none;">
+          <div class="modal-box">
+            <div class="modal-header">
+              <h3>Share Payslip</h3>
+              <button type="button" class="modal-close" id="modal-close-share">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p>How would you like to share the payslip?</p>
+              <div class="modal-actions">
+                <button type="button" class="btn btn-primary" id="btn-share-email">Email</button>
+                <button type="button" class="btn btn-primary" id="btn-share-whatsapp">WhatsApp</button>
+                <button type="button" class="btn btn-outline" id="btn-cancel-share">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
 
         <!-- Inventory Section -->
         <section id="panel-inventory" class="manager-panel">

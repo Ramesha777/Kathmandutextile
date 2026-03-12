@@ -1,7 +1,7 @@
 // manager.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, serverTimestamp, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
 const app = initializeApp(firebaseConfig);
@@ -38,6 +38,12 @@ const selSlipEmployee = document.getElementById('slip-employee');
 const selSlipMonth = document.getElementById('slip-month');
 const btnPreviewSlip = document.getElementById('btn-preview-slip');
 const btnDownloadSlip = document.getElementById('btn-download-slip');
+const btnShareSlip = document.getElementById('btn-share-slip');
+const shareModal = document.getElementById('share-modal');
+const btnShareEmail = document.getElementById('btn-share-email');
+const btnShareWhatsApp = document.getElementById('btn-share-whatsapp');
+const btnCancelShare = document.getElementById('btn-cancel-share');
+const modalCloseShare = document.getElementById('modal-close-share');
 const managerInventoryListEl = document.getElementById('managerInventoryList');
 const managerInventoryCategoryFilterEl = document.getElementById('managerInventoryCategoryFilter');
 const managerDamageReportsListEl = document.getElementById('managerDamageReportsList');
@@ -301,7 +307,7 @@ async function loadWageEntries() {
     entries.sort((a, b) => new Date(b.date) - new Date(a.date));
     
     if (entries.length === 0) {
-      tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;">No wage entries yet</td></tr>';
+      tblWageEntriesBody.innerHTML = '<tr><td colspan="14" style="text-align:center;">No wage entries yet</td></tr>';
       return;
     }
     
@@ -330,6 +336,13 @@ async function loadWageEntries() {
           <td>Rs. ${(e.bonus || 0).toLocaleString()}</td>
           <td>Rs. ${(e.deduct || 0).toLocaleString()}</td>
           <td><strong>Rs. ${(e.net || 0).toLocaleString()}</strong></td>
+          <td>
+            <button type="button" class="btn btn-sm btn-outline wage-manage-toggle" data-id="${e.id}">Manage</button>
+            <div class="wage-row-actions" id="wage-actions-${e.id}" style="display:none; margin-top:6px;">
+              <button type="button" class="btn btn-sm btn-outline wage-edit" data-id="${e.id}">Edit</button>
+              <button type="button" class="btn btn-sm btn-primary wage-delete" data-id="${e.id}">Delete</button>
+            </div>
+          </td>
         </tr>
       `;
     });
@@ -337,7 +350,7 @@ async function loadWageEntries() {
   } catch (err) {
     console.error('Failed to load wage entries:', err);
     if (tblWageEntriesBody) {
-      tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:red;">Failed to load wage entries</td></tr>';
+      tblWageEntriesBody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:red;">Failed to load wage entries</td></tr>';
     }
   }
 }
@@ -533,6 +546,34 @@ async function reduceInventoryForMachineOps(itemName, qtyToReduce) {
   return { success: true };
 }
 
+/**
+ * Restore inventory quantity when manager deletes a Machine Operators wage entry.
+ * Adds the qty back to the first matching inventory item by name.
+ * @returns {{ success: boolean, message?: string }}
+ */
+async function restoreInventoryForMachineOps(itemName, qtyToRestore) {
+  if (!itemName || !(qtyToRestore > 0)) return { success: true };
+
+  const searchName = String(itemName).toLowerCase().trim();
+  const snap = await getDocs(collection(db, 'inventory'));
+  const matches = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((x) => (x.name || '').toLowerCase().trim() === searchName);
+
+  if (matches.length === 0) {
+    return { success: false, message: `No inventory found for "${itemName}" to restore. Wage deleted but inventory not updated.` };
+  }
+
+  // Add back to first matching item
+  const target = matches[0];
+  const currentQty = Number(target.quantity) || 0;
+  const newQty = currentQty + qtyToRestore;
+  await updateDoc(doc(db, 'inventory', target.id), {
+    quantity: newQty,
+  });
+  return { success: true };
+}
+
 async function loadManagerUserNameMap() {
   try {
     const snap = await getDocs(collection(db, 'users'));
@@ -634,8 +675,11 @@ function renderManagerInventoryTable() {
         <td>${escapeHtml(expiryDate)}</td>
         <td>${escapeHtml(x.storageArea || '—')}</td>
         <td>
-          <button type="button" class="btn btn-sm btn-outline manager-edit-inventory" data-id="${escapeHtml(x.id)}">Edit</button>
-          <button type="button" class="btn btn-sm btn-primary manager-delete-inventory" data-id="${escapeHtml(x.id)}">Delete</button>
+          <button type="button" class="btn btn-sm btn-outline manager-manage-inventory" data-id="${escapeHtml(x.id)}">Manage</button>
+          <div class="manager-inventory-actions" id="manager-inventory-actions-${escapeHtml(x.id)}" style="display:none; margin-top:6px;">
+            <button type="button" class="btn btn-sm btn-outline manager-edit-inventory" data-id="${escapeHtml(x.id)}">Edit</button>
+            <button type="button" class="btn btn-sm btn-primary manager-delete-inventory" data-id="${escapeHtml(x.id)}">Delete</button>
+          </div>
         </td>
       </tr>
     `;
@@ -737,8 +781,21 @@ if (managerInventoryCategoryFilterEl) {
 
 if (managerInventoryListEl) {
   managerInventoryListEl.addEventListener('click', async (e) => {
+    const manageBtn = e.target.closest('.manager-manage-inventory');
     const editBtn = e.target.closest('.manager-edit-inventory');
     const delBtn = e.target.closest('.manager-delete-inventory');
+
+    if (manageBtn) {
+      const id = manageBtn.getAttribute('data-id');
+      const panel = document.getElementById(`manager-inventory-actions-${id}`);
+      if (!panel) return;
+      const willShow = panel.style.display === 'none';
+      managerInventoryListEl.querySelectorAll('.manager-inventory-actions').forEach((el) => {
+        el.style.display = 'none';
+      });
+      panel.style.display = willShow ? 'block' : 'none';
+      return;
+    }
 
     if (editBtn) {
       const id = editBtn.getAttribute('data-id');
@@ -879,6 +936,137 @@ function clearWageForm() {
 }
 btnClear.addEventListener('click', clearWageForm);
 
+if (tblWageEntriesBody) {
+  tblWageEntriesBody.addEventListener('click', async (e) => {
+    const manageBtn = e.target.closest('.wage-manage-toggle');
+    const editBtn = e.target.closest('.wage-edit');
+    const delBtn = e.target.closest('.wage-delete');
+
+    if (manageBtn) {
+      const id = manageBtn.getAttribute('data-id');
+      const panel = document.getElementById(`wage-actions-${id}`);
+      if (!panel) return;
+      const willShow = panel.style.display === 'none';
+      tblWageEntriesBody.querySelectorAll('.wage-row-actions').forEach((el) => {
+        el.style.display = 'none';
+      });
+      panel.style.display = willShow ? 'block' : 'none';
+      return;
+    }
+
+    if (editBtn) {
+      const id = editBtn.getAttribute('data-id');
+      try {
+        const snap = await getDocs(collection(db, 'wageEntries'));
+        const entries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const row = entries.find((x) => x.id === id);
+        if (!row) return;
+
+        const qtyRaw = prompt('Quantity:', row.qty != null ? String(row.qty) : '0');
+        if (qtyRaw === null) return;
+        const unit = prompt('Unit:', row.unit || '');
+        if (unit === null) return;
+        const otRaw = prompt('Overtime hours:', row.ot != null ? String(row.ot) : '0');
+        if (otRaw === null) return;
+        const bonusRaw = prompt('Bonus:', row.bonus != null ? String(row.bonus) : '0');
+        if (bonusRaw === null) return;
+        const deductRaw = prompt('Deduction:', row.deduct != null ? String(row.deduct) : '0');
+        if (deductRaw === null) return;
+
+        const qty = Number(qtyRaw);
+        const ot = Number(otRaw);
+        const bonus = Number(bonusRaw);
+        const deduct = Number(deductRaw);
+        const rate = Number(row.rate) || 0;
+
+        if ([qty, ot, bonus, deduct].some(Number.isNaN) || qty < 0) {
+          showToast('Invalid numeric input', 'error');
+          return;
+        }
+
+        const oldQty = Number(row.qty) || 0;
+        const delta = qty - oldQty;
+
+        // Sync inventory with wage qty change:
+        // delta > 0 => consume more inventory (decrease inventory)
+        // delta < 0 => consume less inventory (increase inventory)
+        const wageItemName = String(row.item || '').trim().toLowerCase();
+        if (wageItemName) {
+          const invSnap = await getDocs(collection(db, 'inventory'));
+          const invMatch = invSnap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .find((inv) => String(inv.name || '').trim().toLowerCase() === wageItemName);
+
+          if (invMatch && delta !== 0) {
+            const currentInvQty = Number(invMatch.quantity) || 0;
+            const updatedInvQty = currentInvQty - delta;
+            if (updatedInvQty < 0) {
+              showToast('Not enough inventory for increased quantity', 'error');
+              return;
+            }
+            await updateDoc(doc(db, 'inventory', invMatch.id), {
+              quantity: updatedInvQty
+            });
+          }
+        }
+
+        const wages = qty * rate;
+        const otPay = ot * (rate / 8) * 1.5;
+        const net = wages + otPay + bonus - deduct;
+
+        await updateDoc(doc(db, 'wageEntries', id), {
+          qty,
+          unit: unit.trim() || null,
+          wages,
+          ot,
+          otPay,
+          bonus,
+          deduct,
+          net
+        });
+
+        showToast('Wage entry updated');
+        await Promise.all([loadWageEntries(), loadManagerInventory()]);
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to update wage entry', 'error');
+      }
+      return;
+    }
+
+    if (delBtn) {
+      const id = delBtn.getAttribute('data-id');
+      if (!confirm('Delete this wage entry permanently?')) return;
+      try {
+        // Fetch wage entry to check if we need to restore inventory (Machine Operators)
+        const wageSnap = await getDoc(doc(db, 'wageEntries', id));
+        const wageData = wageSnap.exists() ? wageSnap.data() : null;
+        const isMachineOps = wageData && (wageData.department || '').toLowerCase().includes('machine');
+        const item = (wageData?.item || '').trim();
+        const qty = Number(wageData?.qty) || 0;
+
+        let restoreSuccess = true;
+        if (isMachineOps && item && qty > 0) {
+          const restoreResult = await restoreInventoryForMachineOps(item, qty);
+          restoreSuccess = restoreResult.success;
+        }
+
+        await deleteDoc(doc(db, 'wageEntries', id));
+
+        if (isMachineOps && item && qty > 0) {
+          showToast(restoreSuccess ? 'Wage deleted & inventory restored' : `Wage deleted. ${item} not found in inventory to restore.`);
+        } else {
+          showToast('Wage entry deleted');
+        }
+        await loadWageEntries();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to delete wage entry', 'error');
+      }
+    }
+  });
+}
+
 // payslip summary
 async function getMonthlySummary(empId, monthName) {
   const employeesSnap = await getDocs(collection(db, 'employees'));
@@ -962,6 +1150,106 @@ btnDownloadSlip.addEventListener('click', async () => {
   });
   doc.save(`payslip_${empId.replace(/\s+/g,'_')}_${month}.pdf`);
 });
+
+// Share functionality
+function getMonthlySummaryText(summary, month) {
+  if (!summary) return '';
+  return `
+    Payslip Summary - ${month}
+    ---------------------------
+    Employee: ${summary.name}
+    Month: ${month}
+    ---------------------------
+    Basic Wages: Rs. ${summary.wages.toLocaleString()}
+    Overtime: Rs. ${summary.otPay.toLocaleString()}
+    Bonus: Rs. ${summary.bonus.toLocaleString()}
+    Deduction: Rs. ${summary.deduct.toLocaleString()}
+    ---------------------------
+    Net Pay: Rs. ${summary.net.toLocaleString()}
+    ---------------------------
+  `.trim().replace(/    /g, '');
+}
+
+async function shareViaEmail() {
+  const empId = selSlipEmployee.value;
+  const month = selSlipMonth.value;
+  if (!empId || !month) {
+    showToast('Select employee and month', 'error');
+    return;
+  }
+
+  const employee = employees.find(e => e.id === empId);
+  if (!employee || !employee.email) {
+    showToast('Employee email not available', 'error');
+    return;
+  }
+
+  const summary = await getMonthlySummary(empId, month);
+  if (!summary || summary.net === 0) {
+    showToast('No wage data to share', 'error');
+    return;
+  }
+
+  const payslipText = getMonthlySummaryText(summary, month);
+  const subject = `Payslip for ${month}`;
+  const body = encodeURIComponent(payslipText);
+  window.location.href = `mailto:${employee.email}?subject=${subject}&body=${body}`;
+}
+
+async function shareViaWhatsApp() {
+  const empId = selSlipEmployee.value;
+  const month = selSlipMonth.value;
+  if (!empId || !month) {
+    showToast('Select employee and month', 'error');
+    return;
+  }
+
+  const employee = employees.find(e => e.id === empId);
+  if (!employee || !employee.phone) {
+    showToast('Employee phone number not available', 'error');
+    return;
+  }
+
+  const summary = await getMonthlySummary(empId, month);
+  if (!summary || summary.net === 0) {
+    showToast('No wage data to share', 'error');
+    return;
+  }
+
+  const payslipText = getMonthlySummaryText(summary, month);
+  const encodedText = encodeURIComponent(payslipText);
+  // a regex to remove all non-digit characters from the phone number
+  const phone = employee.phone.replace(/\D/g, '');
+  window.open(`https://wa.me/${phone}?text=${encodedText}`, '_blank');
+}
+
+
+if (btnShareSlip) {
+  btnShareSlip.addEventListener('click', () => {
+    if (shareModal) shareModal.style.display = 'flex';
+  });
+}
+
+if (btnCancelShare) {
+  btnCancelShare.addEventListener('click', () => {
+    if (shareModal) shareModal.style.display = 'none';
+  });
+}
+
+if(modalCloseShare) {
+  modalCloseShare.addEventListener('click', () => {
+    if (shareModal) shareModal.style.display = 'none';
+  });
+}
+
+if (btnShareEmail) {
+  btnShareEmail.addEventListener('click', shareViaEmail);
+}
+
+if (btnShareWhatsApp) {
+  btnShareWhatsApp.addEventListener('click', shareViaWhatsApp);
+}
+
 
 // init
 (async function(){
