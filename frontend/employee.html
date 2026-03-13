@@ -6,6 +6,7 @@
   <title>Employee | Kathmandu Textile Industry</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="Employee.css">
+<link rel="stylesheet" href="../dashboard-header.css">
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
     .employee-wrap { width: calc(100% - 24px); margin: 12px auto; display: flex; flex-direction: column; height: calc(100vh - 24px); border-radius: 12px; }
@@ -23,7 +24,11 @@
   <div class="employee-wrap">
     <header class="employee-header">
       <h1>Employee Dashboard</h1>
-      <button type="button" class="btn btn-outline" id="logoutBtn">Sign Out</button>
+      <div class="dashboard-header-greeting" id="dashboard-user" data-user>Loading...</div>
+      <div class="dashboard-header-datetime" id="dashboard-datetime" data-datetime>Loading...</div>
+      <button id="btnSignOut" style="background:transparent;border:1px solid rgba(244,63,94,.3);color:rgba(244,63,94,.8);font-size:.8rem;padding:.4rem .9rem;border-radius:10px;cursor:pointer;font-family:'DM Sans',sans-serif">Sign Out</button>
+
+   
     </header>
 <!-- nav bar-->
     <div class="employee-body">
@@ -267,5 +272,6 @@
 
   <script type="module" src="auth-guard.js"></script>
   <script type="module" src="employee.js"></script>
+  <script type="module" src="dashboard-header.js"></script>
 </body>
 </html>

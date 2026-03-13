@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Employee Performance | KTI Admin</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="dashboard-header.css">
+<link rel="stylesheet" href="performance.css">
+
+<style>
+</style>
+</head>
+<body data-required-role="Manager,admin"></body>
+
+  <div class="body">
+  
+
+    <main class="content">
+      <div class="inner">
+        <!-- Title -->
+        <div class="ptw">
+          <h2>Employee Performance</h2>
+          <p>Output &amp; wages loaded from manager wage entries · filter by employee, department, product &amp; month</p>
+          <div id="top-badge">🏆 <strong style="color:#fbbf24">Sita Sharma</strong> leads with <strong style="color:#fbbf24">1,240</strong> units this period</div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+          <div class="fg"><label>Employee</label>
+            <select id="f-emp">
+              <option value="all">All Employees</option>
+              <!-- Employee options will be populated dynamically from data -->
+            </select>
+          </div>
+          <div class="fg"><label>Department</label>
+            <select id="f-dept">
+              <option value="all">All Departments</option>
+              <option>Machine</option><option>Production</option><option>Daily</option>
+            </select>
+          </div>
+          <div class="fg"><label>Product / Item</label>
+              <!-- Product options will be populated dynamically from data -->
+               <input type="text" id="f-prod-search" placeholder="Search product..." style="margin-top:4px;padding:4px;font-size:0.9rem;width:100%;border:1px solid #ccc;border-radius:6px"/>
+          </div>
+          <div class="fg"><label> From</label>
+            <input type="date" id="f-date-from" style="margin-top:4px;padding:4px;font-size:0.9rem;width:100%;border:1px solid #ccc;border-radius:6px"/>
+          </div>
+          <div class="fg"><label> To</label>
+            <input type="date" id="f-date-to" style="margin-top:4px;padding:4px;font-size:0.9rem;width:100%;border:1px solid #ccc;border-radius:6px"/>
+          </div>
+          <button class="rbtn">↺ Reset</button>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats">
+          <div class="sc" style="border-top:3px solid #f59e0b">
+            <div class="sc-label">Total Output</div>
+            <div class="sc-value" style="color:#f59e0b">6,820</div>
+            <div class="sc-unit">units</div>
+          </div>
+          <div class="sc" style="border-top:3px solid #10b981">
+            <div class="sc-label">Total Wages</div>
+            <div class="sc-value" style="color:#10b981">Rs 284,600</div>
+          </div>
+          <div class="sc" style="border-top:3px solid #38bdf8">
+            <div class="sc-label">Active Employees</div>
+            <div class="sc-value" style="color:#38bdf8">6</div>
+            <div class="sc-unit">active</div>
+          </div>
+          <div class="sc" style="border-top:3px solid #8b5cf6">
+            <div class="sc-label">Avg Output / Emp</div>
+            <div class="sc-value" style="color:#8b5cf6">1,137</div>
+            <div class="sc-unit">units</div>
+          </div>
+        </div>
+
+        <!-- Charts row 1 -->
+        <div class="g2">
+          <div class="cc"><div class="ci"><canvas id="topBar"></canvas></div></div>
+          <div class="cc"><div class="ci"><canvas id="deptPie"></canvas></div></div>
+        </div>
+
+        <!-- Charts row 2 -->
+        <div class="g1">
+          <div class="cc"><div class="ci-s"><canvas id="prodBar"></canvas></div></div>
+        </div>
+
+        <!-- Charts row 3 -->
+        <div class="g1">
+          <div class="cc"><div class="ci-s"><canvas id="trendLine"></canvas></div></div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div class="lb-card">
+          <div class="lb-head"><h3>🏆 Performance Leaderboard</h3><span>Ranked by total output</span></div>
+          <div id="leaderboard"></div>
+        </div>
+
+        <!-- Table -->
+        <div class="tc">
+          <div class="th-row"><h3>Detailed Breakdown</h3></div>
+          <div class="tscroll"><table>
+            <thead><tr>
+              <th>Employee</th><th>Dept</th><th>Product / Item</th>
+              <th>Total Qty</th><th>Total Wages</th><th>Rate/Unit</th><th>Months Active</th>
+            </tr></thead>
+            <tbody id="detail-body"></tbody>
+          </table></div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+<script type="module" src="performance.js"></script>
+<script type="module" src="auth-guard.js"></script>
+<script type="module" src="dashboard-header.js"></script>
+
+</body>
+</html>

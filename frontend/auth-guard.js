@@ -13,8 +13,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 function getRequiredRole() {
-  const role = document.body.getAttribute('data-required-role');
-  return (role || '').trim();
+  const roleStr = document.body.getAttribute('data-required-role') || '';
+  const roles = roleStr.split(',').map(r => r.trim()).filter(r => r);
+  return roles.length > 0 ? roles : null;
 }
 
 async function getUserRole(uid) {
@@ -26,6 +27,8 @@ async function getUserRole(uid) {
 }
 
 function redirectToLogin() {
+  localStorage.clear();
+  sessionStorage.clear();
   window.location.replace('login.html');
 }
 
@@ -51,8 +54,8 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
-  const requiredRole = getRequiredRole();
-  if (!requiredRole) return;
+  const requiredRoles = getRequiredRole();
+  if (!requiredRoles || requiredRoles.length === 0) return;
 
   const userRole = await getUserRole(user.uid);
   if (!userRole) {
@@ -60,7 +63,7 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
-  if (userRole !== requiredRole) {
+  if (!requiredRoles.includes(userRole)) {
     redirectByRole(userRole);
   }
 });

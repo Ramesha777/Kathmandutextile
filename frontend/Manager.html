@@ -6,6 +6,7 @@
   <title>Manager | Kathmandu Textile Industry</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="manager.css">
+  <link rel="stylesheet" href="dashboard-header.css">
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
     .manager-wrap { width: calc(100% - 24px); margin: 12px auto; display: flex; flex-direction: column; height: calc(100vh - 24px); min-height: calc(100vh - 24px); border-radius: 12px; }
@@ -22,9 +23,11 @@
   <div class="manager-wrap">
     <header class="manager-header">
       <h1>Manager Dashboard</h1>
-      <button type="button" class="btn btn-outline" id="logoutBtn">Sign Out</button>
-    </header>
-
+      <div class="dashboard-header-greeting" id="dashboard-user" data-user>Loading...</div>
+      <div class="dashboard-header-datetime" id="dashboard-datetime" data-datetime>Loading...</div>
+      <button id="btnSignOut" style="background:transparent;border:1px solid rgba(244,63,94,.3);color:rgba(244,63,94,.8);font-size:.8rem;padding:.4rem .9rem;border-radius:10px;cursor:pointer;font-family:'DM Sans',sans-serif">Sign Out</button>
+  
+    </header> 
     <div class="manager-body">
       <!-- Left: section list -->
       <nav class="manager-sidebar">
@@ -35,6 +38,8 @@
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="inventory">📦 Inventory</a></li>
 <li><a role="button" tabindex="0" class="manager-nav-link" data-section="damage-reports">⚠️ Damage Reports</a></li>
 <li><a role="button" tabindex="0" class="manager-nav-link" data-section="orders">📋 Manage Orders</a></li>
+<li><a role="button" tabindex="0" class="manager-nav-link" data-section="performance">📊 Performance</a></li>
+<li><a href="performance.html" style="display: none;">📊 Full Performance Page</a></li>
         </ul>
       </nav>
 
@@ -275,4 +280,5 @@
 
   <script type="module" src="auth-guard.js"></script>
   <script type="module" src="manager.js"></script>
+  <script type="module" src="dashboard-header.js"></script>
 </body>

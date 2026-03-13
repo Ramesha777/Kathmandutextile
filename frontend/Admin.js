@@ -3,8 +3,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import {
   getAuth,
   createUserWithEmailAndPassword,
-  signOut,
-  signInWithEmailAndPassword
+  signOut
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore,
@@ -87,7 +86,7 @@ function renderUserTable(users) {
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Name</th>
+          <th>Email</th>
           <th>Role</th>
           <th>Actions</th>
         </tr>
@@ -95,13 +94,12 @@ function renderUserTable(users) {
       <tbody>
   `;
   for (const u of users) {
-    const displayName = (u.displayName || u.name || "").trim() || (u.email || u.uid || "—");
-    const email = u.email || u.uid || "";
+    const email = u.email || u.uid || "—";
     const role = (u.role || "employee").trim();
     const isSelf = u.uid === currentUid;
     html += `
       <tr data-uid="${u.uid}">
-        <td title="${escapeHtml(email || "—")}">${escapeHtml(displayName)}</td>
+        <td>${escapeHtml(email)}</td>
         <td>
           <select class="role-select" data-uid="${u.uid}" ${isSelf ? "disabled" : ""}>
             ${ROLES.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${r}</option>`).join("")}
@@ -176,9 +174,10 @@ function resolveEmployeeFromRef(rawValue) {
   return found || null;
 }
 
-// No auto-fill: employee dropdown is for view/select only; admin enters email manually.
 function autofillUserEmailFromEmployeeRef() {
-  // Intentionally empty: email is entered manually when granting access.
+  if (!newUserRefInput || !newEmailInput) return;
+  const found = resolveEmployeeFromRef(newUserRefInput.value);
+  newEmailInput.value = found?.email || "";
 }
 
 async function updateRole(uid, newRole) {
@@ -196,24 +195,41 @@ async function updateRole(uid, newRole) {
   }
 }
 
-function removeUser(uid) {
-  showModal(
-    "Remove User",
-    "Remove this user from the app? They will no longer be able to sign in. (Their Firebase Auth account will remain until removed via Firebase Console or backend.)",
-    async () => {
-      hideMessage();
-      try {
-        await deleteDoc(doc(db, "users", uid));
-        showMessage("User removed from database.");
-        loadUsers();
-      } catch (err) {
-        showMessage("Failed to remove user: " + (err.message || err), true);
-      }
-    }
-  );
+// Admin API configuration — URL should be set at build/deploy time via environment config.
+// Do NOT embed secrets in frontend code. The backend should authenticate
+// requests using session cookies or Firebase ID tokens, not a static API key.
+function getAdminApiBaseUrl() {
+  // Use a runtime-configured URL; fall back to relative path so requests
+  // go through the same origin (which should be HTTPS in production).
+  return window.__ADMIN_API_BASE_URL || "/api";
 }
 
-async function addUser(email, password, role, displayName) {
+async function deleteAuthUserViaBackend(uid) {
+  // Obtain the current user's Firebase ID token to authenticate the request
+  // server-side instead of sending a static secret.
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("You must be signed in to perform this action.");
+  }
+  const idToken = await currentUser.getIdToken();
+
+  const response = await fetch(`${getAdminApiBaseUrl()}/admin/delete-user`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${idToken}`
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({ uid })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error || "Failed to delete Firebase Auth user.");
+  }
+}
+
+async function addUser(email, password, role) {
   hideMessage();
   if (!email || !password || !role) {
     showMessage("Please fill email, password, and role.", true);
@@ -223,8 +239,6 @@ async function addUser(email, password, role, displayName) {
     showMessage("Invalid role.", true);
     return;
   }
-  const adminEmail = auth.currentUser?.email;
-  const adminPassword = document.getElementById("adminPasswordToStay")?.value?.trim() || "";
   const submitBtn = addUserForm?.querySelector('button[type="submit"]');
   if (submitBtn) {
     submitBtn.disabled = true;
@@ -234,19 +248,11 @@ async function addUser(email, password, role, displayName) {
     const userCred = await createUserWithEmailAndPassword(auth, email, password);
     await setDoc(doc(db, "users", userCred.user.uid), {
       email: email.trim(),
-      role: role,
-      displayName: displayName || null
+      role: role
     });
     await signOut(auth);
-    if (adminEmail && adminPassword) {
-      await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
-      showMessage("User created. You are still logged in.");
-      loadUsers();
-      addUserForm?.reset();
-    } else {
-      window.location.replace("login.html?msg=User+created.+Please+sign+in+again.");
-      return;
-    }
+    window.location.replace("login.html?msg=User+created.+Please+sign+in+again.");
+    return;
   } catch (err) {
     let msg = err.message || "Failed to create user.";
     if (err.code === "auth/email-already-in-use") msg = "This email is already registered.";
@@ -269,26 +275,22 @@ function isValidEmail(email) {
 
 function isValidPhone(phone) {
   if (!phone || typeof phone !== "string") return false;
-  // Accept phone numbers with 7-15 digits, optionally with +, -, (), spaces
   const phoneRegex = /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/;
   return phoneRegex.test(phone.replace(/\s/g, ""));
 }
 
 function isValidIdNumber(idNumber) {
-  // Basic validation: at least 5 characters, alphanumeric
   if (!idNumber || typeof idNumber !== "string") return false;
   return idNumber.length >= 5 && /^[a-zA-Z0-9]+$/.test(idNumber);
 }
 
 function isValidUrl(url) {
-  // Validate URL: allow https://, http://, and data:image/*
   if (!url || typeof url !== "string") return false;
   try {
     const urlObj = new URL(url);
     const allowedProtocols = ["https:", "http:", "data:"];
     const isAllowedProtocol = allowedProtocols.some(proto => urlObj.href.startsWith(proto));
     if (!isAllowedProtocol) return false;
-    // For data URLs, ensure they start with data:image/
     if (urlObj.href.startsWith("data:")) {
       return urlObj.href.startsWith("data:image/");
     }
@@ -298,7 +300,6 @@ function isValidUrl(url) {
   }
 }
 
-// Add employee info only (no login) — stored in employees collection
 async function addEmployeeInfo() {
   hideMessage();
   const fullName = document.getElementById("empFullName")?.value?.trim();
@@ -318,7 +319,6 @@ async function addEmployeeInfo() {
   const personalIdPhotoUrl = document.getElementById("empIdPhotoUrl")?.value?.trim() || null;
   const photoUrl = document.getElementById("empPhotoUrl")?.value?.trim() || null;
 
-  // Validation
   if (email && !isValidEmail(email)) {
     showMessage("Please enter a valid email address.", true);
     return;
@@ -350,9 +350,6 @@ async function addEmployeeInfo() {
     submitBtn.textContent = "Adding…";
   }
   try {
-    // Do NOT store sensitive PII: personalIdNumber, bankAccountNumber, etc. in Firestore in production without proper security rules and encryption.
-    // acc details and ID numbers are stored here for demo purposes only.
-    // self created Personal Information which doesnot not match with any real person's info. Do not use real data.
     const empData = {
       fullName,
       phone,
@@ -376,14 +373,11 @@ async function addEmployeeInfo() {
       editingEmployeeId = null;
       if (submitBtn) submitBtn.textContent = "Add employee (info only)";
     } else {
-      // Auto-generate employee ID from last 5 digits of phone number
       let employeeId = null;
       if (phone) {
-        // Extract only digits from phone and get last 5
         const phoneDigits = phone.replace(/\D/g, '');
-        employeeId = phoneDigits.slice(-5); // last 5 digits
+        employeeId = phoneDigits.slice(-5);
         
-        // Check if this ID already exists
         const existingSnap = await getDoc(doc(db, "employees", employeeId));
         if (existingSnap.exists()) {
           showMessage(`Employee ID ${employeeId} (from phone) already exists. Please use a different phone number.`, true);
@@ -419,6 +413,7 @@ async function addEmployeeInfo() {
     }
   }
 }
+
 function createModal() {
   if (document.getElementById("confirmationModal")) return;
   const modalHtml = `
@@ -455,12 +450,10 @@ function showModal(title, text, onConfirm) {
 }
 
 function createEmployeeModal() {
-  // Use modal already present in admin.html
   employeeModal = document.getElementById("employee-modal");
   employeeModalBody = document.getElementById("employee-modal-body");
   modalCloseEmployee = document.getElementById("modal-close-employee");
 
-  // Fallback only if missing
   if (!employeeModal || !employeeModalBody || !modalCloseEmployee) {
     const modalHtml = `
     <div id="employee-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
@@ -513,7 +506,6 @@ function deleteEmployee(id) {
   );
 }
 
-// Employee Modal Functions
 function showEmployeeModal(emp) {
   try {
     if (!emp) {
@@ -527,7 +519,6 @@ function showEmployeeModal(emp) {
       return;
     }
     
-    // Generate photo HTML
     let photoHtml = '';
     if (emp.photoUrl) {
       photoHtml = `
@@ -548,7 +539,6 @@ function showEmployeeModal(emp) {
       `;
     }
     
-    // Generate ID Photo HTML
     let idPhotoHtml = '';
     if (emp.personalIdPhotoUrl) {
       idPhotoHtml = `
@@ -608,7 +598,6 @@ function showEmployeeModal(emp) {
     employeeModalBody.innerHTML = modalContent;
     employeeModal.style.display = "flex";
     
-    // Add event listeners for Edit and Remove buttons in modal
     document.getElementById('btn-modal-edit')?.addEventListener('click', () => {
       closeEmployeeModal();
       prepareEditEmployee(emp);
@@ -630,15 +619,12 @@ function closeEmployeeModal() {
   }
 }
 
-
 function prepareEditEmployee(emp) {
-  // Switch to Add Form tab (this will trigger the reset listener first)
   const formBtn = document.querySelector('.emp-section-btn[data-target="block-add-employee-form"]');
   if (formBtn) formBtn.click();
 
   editingEmployeeId = emp.id;
   
-  // Populate fields
   if (document.getElementById("empFullName")) document.getElementById("empFullName").value = emp.fullName || "";
   if (document.getElementById("empPhone")) document.getElementById("empPhone").value = emp.phone || "";
   if (document.getElementById("empEmail")) document.getElementById("empEmail").value = emp.email || "";
@@ -657,7 +643,6 @@ function prepareEditEmployee(emp) {
   showMessage("Editing " + (emp.fullName || "employee"));
 }
 
-// ─── Employee records table (Add Employee section) ───
 async function loadEmployeeRecords() {
   if (!employeeRecordsListEl) return;
   employeeRecordsListEl.innerHTML = "<p class='loading-msg'>Loading employee records…</p>";
@@ -747,7 +732,6 @@ function renderTableView(list) {
   tbody += "</tbody>";
   container.innerHTML = "<table class=\"admin-table employee-records-table\">" + thead + tbody + "</table>";
   
-  // Add click listeners to view buttons
   container.querySelectorAll('.btn-view-employee').forEach(btn => {
     btn.addEventListener('click', () => {
       const empId = btn.getAttribute('data-id');
@@ -759,7 +743,6 @@ function renderTableView(list) {
   });
 }
 
-
 function showPanel(sectionId) {
   document.querySelectorAll(".admin-panel").forEach((p) => p.classList.remove("active"));
   document.querySelectorAll(".admin-nav-link").forEach((a) => a.classList.remove("active"));
@@ -768,8 +751,14 @@ function showPanel(sectionId) {
   if (panel) panel.classList.add("active");
   if (link) link.classList.add("active");
   if (sectionId === "add-employee") loadEmployeeRecords();
-  if (sectionId === "production-log") loadProductionLog();
+  if (sectionId === "production-log") {
+    loadProductionLogItems();
+    if (typeof initProductionLog === "function") {
+      setTimeout(() => initProductionLog(), 50);
+    }
+  }
 }
+
 const COLLECTION_MACHINE_OPS = "rates_machineOperators";
 const COLLECTION_PRODUCTIONS = "rates_productions";
 const COLLECTION_DAILY = "rates_daily";
@@ -784,7 +773,7 @@ function isFibreCategory(category) {
 }
 
 function isFinishedProductCategory(category) {
-  const c = normalizeText(category).toLowerCase();
+  const c = normalizeText(category).replace(/\s+/g, " ").toLowerCase();
   return c === "finished product";
 }
 
@@ -822,6 +811,31 @@ async function loadFibreOptionsFromInventory() {
   }
 
   toggleOtherFibreInput();
+}
+
+async function loadProductionLogItems() {
+  const itemFilterEl = document.getElementById("fl-item");
+  if (!itemFilterEl) return;
+
+  try {
+    const snap = await getDocs(collection(db, "inventory"));
+    const namesSet = new Set();
+    snap.forEach((d) => {
+      const item = d.data() || {};
+      if (!isFinishedProductCategory(item.category)) return;
+      const n = normalizeText(item.name);
+      if (n) namesSet.add(n);
+    });
+
+    const names = Array.from(namesSet).sort((a, b) => a.localeCompare(b));
+    let options = '<option value="all">All Items</option>';
+    names.forEach((n) => {
+      options += `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`;
+    });
+    itemFilterEl.innerHTML = options;
+  } catch (err) {
+    console.error("Failed to load production log items:", err);
+  }
 }
 
 function toggleOtherFibreInput() {
@@ -904,65 +918,6 @@ function getSelectedProductName() {
     return normalizeText(otherInput?.value);
   }
   return normalizeText(productSelect.value);
-}
-
-// ─── Production Log (finished product items from inventory) ───
-async function loadProductionLog() {
-  const listEl = document.getElementById("productionLogList");
-  if (!listEl) return;
-  listEl.innerHTML = "<p class='loading-msg'>Loading production log…</p>";
-  try {
-    const snap = await getDocs(collection(db, "inventory"));
-    const items = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((x) => isFinishedProductCategory(x.category));
-    items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    if (items.length === 0) {
-      listEl.innerHTML = "<p class='empty-msg'>No finished product items in inventory. Add inventory with category \"Finished product\".</p>";
-      return;
-    }
-    renderProductionLogTable(listEl, items);
-  } catch (err) {
-    listEl.innerHTML = "<p class='error'>Failed to load production log: " + escapeHtml(err.message || err) + "</p>";
-  }
-}
-
-function renderProductionLogTable(container, items) {
-  if (!container) return;
-  let html = `
-    <table class="admin-table production-log-table">
-      <thead>
-        <tr>
-          <th>Barcode / ID</th>
-          <th>Product name</th>
-          <th>Quantity</th>
-          <th>Unit</th>
-          <th>Storage area</th>
-          <th>Purchase date</th>
-          <th>Expiry date</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
-  for (const x of items) {
-    const qty = x.quantity != null ? x.quantity : "—";
-    const unit = x.unit || x.units || "—";
-    const purchaseDate = x.purchaseDate || "—";
-    const expiryDate = x.expiryDate || "—";
-    html += `
-      <tr>
-        <td>${escapeHtml(x.barcode || x.id || "—")}</td>
-        <td>${escapeHtml(x.name || "—")}</td>
-        <td>${escapeHtml(qty)}</td>
-        <td>${escapeHtml(unit)}</td>
-        <td>${escapeHtml(x.storageArea || "—")}</td>
-        <td>${escapeHtml(purchaseDate)}</td>
-        <td>${escapeHtml(expiryDate)}</td>
-      </tr>
-    `;
-  }
-  html += "</tbody></table>";
-  container.innerHTML = html;
 }
 
 async function loadRates(collectionName) {
@@ -1173,6 +1128,20 @@ async function addDaily(label, hourlyRate) {
   }
 }
 
+// Set dynamic default dates for production log filters
+function setDefaultFilterDates() {
+  const flFrom = document.getElementById("fl-from");
+  const flTo = document.getElementById("fl-to");
+  if (flTo) {
+    flTo.value = new Date().toISOString().slice(0, 10);
+  }
+  if (flFrom) {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    flFrom.value = thirtyDaysAgo.toISOString().slice(0, 10);
+  }
+}
+
 function init() {
   createModal();
   loadUsers();
@@ -1180,6 +1149,7 @@ function init() {
   loadFibreOptionsFromInventory();
   loadProductOptionsFromInventory();
   loadEmployeeUserRefs();
+  setDefaultFilterDates();
 
   document.querySelectorAll(".admin-nav-link").forEach((a) => {
     a.addEventListener("click", (e) => {
@@ -1187,7 +1157,6 @@ function init() {
       const section = a.getAttribute("data-section");
       if (section) showPanel(section);
     });
-    // Keyboard support for role="button"
     a.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
@@ -1195,6 +1164,11 @@ function init() {
         if (section) showPanel(section);
       }
     });
+  });
+
+  document.getElementById("fl-refresh")?.addEventListener("click", () => {
+    loadProductionLogItems();
+    if (typeof initProductionLog === "function") initProductionLog();
   });
 
   // Toggle between Add Employee Form and Records List
@@ -1211,7 +1185,6 @@ function init() {
       document.getElementById("block-add-employee-form").style.display = target === "block-add-employee-form" ? "block" : "none";
       document.getElementById("block-employee-records").style.display = target === "block-employee-records" ? "block" : "none";
       
-      // Reset edit state when switching to Add Form manually
       if (target === "block-add-employee-form") {
         editingEmployeeId = null;
         addEmployeeInfoForm?.reset();
@@ -1233,7 +1206,6 @@ function init() {
       renderEmployeeTable(currentEmployeeDeptFilter);
     });
   });
-
 
   document.querySelectorAll(".rate-filter-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1257,12 +1229,19 @@ function init() {
   if (addUserForm) {
     addUserForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const email = document.getElementById("newEmail")?.value?.trim();
+      const found = resolveEmployeeFromRef(document.getElementById("newUserRef")?.value);
+      if (!found) {
+        showMessage("Please select a valid employee Name/ID from records.", true);
+        return;
+      }
+      if (!found.email) {
+        showMessage("Selected employee does not have an email in records.", true);
+        return;
+      }
+      const email = found.email.trim();
       const password = document.getElementById("newPassword")?.value;
       const role = document.getElementById("newRole")?.value;
-      const found = resolveEmployeeFromRef(document.getElementById("newUserRef")?.value);
-      const displayName = found?.fullName || null;
-      addUser(email, password, role, displayName);
+      addUser(email, password, role);
     });
   }
 

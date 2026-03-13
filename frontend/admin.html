@@ -3,9 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin | Kathmandu Textile Industry</title>
+<title>Admin Dashboard | KTI</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="admin.css">
+<link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="production.css">
     <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
     .admin-wrap { width: calc(100% - 24px); margin: 12px auto; display: flex; flex-direction: column; height: calc(100vh - 24px); min-height: calc(100vh - 24px); border-radius: 12px; }
@@ -24,19 +27,23 @@
 </head>
 <body class="admin-page" data-required-role="admin">
   <div class="admin-wrap">
-    <header class="admin-header">
+    <header class="admin-header" id="dashboard-header">
       <h1>Admin Dashboard</h1>
-      <button type="button" class="btn btn-outline" id="logoutBtn">Sign Out</button>
+      <div class="dashboard-header-greeting" id="dashboard-user" data-user>Loading...</div>
+      <div class="dashboard-header-datetime" id="dashboard-datetime" data-datetime>Loading...</div>
+      <button id="btnSignOut" style="background:transparent;border:1px solid rgba(244,63,94,.3);color:rgba(244,63,94,.8);font-size:.8rem;padding:.4rem .9rem;border-radius:10px;cursor:pointer;font-family:'DM Sans',sans-serif">Sign Out</button>
+  
     </header>
 
     <div class="admin-body">
       <!-- Left: section list -->
       <nav class="admin-sidebar">
         <ul class="admin-nav">
-          <li><a role="button" tabindex="0" class="admin-nav-link active" data-section="employees">Employees &amp; Users</a></li>
-          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="add-employee">Add Employee</a></li>
-          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="payment-rates">Payment Rates</a></li>
-          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="production-log">Production Log</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link active" data-section="employees"> 🧑‍🤝‍🧑 Employees &amp; Users</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="add-employee">➕ Add Employee</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="payment-rates"> 💵 Payment Rates</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="production-log">📝 Production Log</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="performance">📊 Performance</a></li>
         </ul>
       </nav>
 
@@ -91,9 +98,10 @@
           <div class="page-container">
           <h2>Manage Employees</h2>
 
-          <div class="emp-section-filters" style="margin-bottom: 1.5rem; display: flex; gap: 12px;">
-            <button type="button" class="btn btn-sm btn-primary emp-section-btn" data-target="block-add-employee-form">Add New Employee</button>
-            <button type="button" class="btn btn-sm btn-outline emp-section-btn" data-target="block-employee-records">View Records</button>
+          <div class="emp-section-filters" style="margin-bottom: 1.5rem; display:flex; gap: 2px;">
+            <button type="button" class="btn btn-sm btn-primary emp-section-btn" data-target="block-add-employee-form" style="width: 12rem;">Add New Employee</button>
+            <!-- make same size of view records button-->
+             <button type="button" class="btn btn-sm btn-outline emp-section-btn" data-target="block-employee-records" style="width:12rem;">View Employee Records</button>
           </div>
 
           <div id="block-add-employee-form" class="admin-section-card">
@@ -204,11 +212,12 @@
           <div class="page-container">
           <h2>Payment Rates</h2>
           <p class="admin-desc">Define rates for Machine Operators (fibres per meter), Productions (pay per product), and Daily (hourly wages). Stored in Firebase.</p>
+              <!-- add buttons on same line-->
 
-          <div class="rate-filters" style="margin-bottom: 1.5rem; display: flex; gap: 12px;">
-            <button type="button" class="btn btn-sm btn-primary rate-filter-btn" data-target="block-machine">Machine Operators</button>
-            <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-production">Productions</button>
-            <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-daily">Daily Wages</button>
+          <div class="rate-filters" style="margin-bottom: 1.5rem; display: flex; gap: 12px; width: 100%; justify-content: center;">
+            <button type="button" class="btn btn-sm btn-primary rate-filter-btn" data-target="block-machine" style="width:12rem;">Machine Operators</button>
+            <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-production" style="width:12rem;">Productions</button>
+            <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-daily" style="width:12rem;">Daily Wages</button>
           </div>
 
           <div id="block-machine" class="rate-block">
@@ -288,12 +297,110 @@
           </div>
         </section>
 
-        <!-- Production Log: finished products from inventory -->
+        <!-- Production Log: full dashboard -->
         <section id="panel-production-log" class="admin-panel">
           <div class="page-container">
-            <h2>Production Log</h2>
-            <p class="admin-desc">View production (finished product) items from inventory. Shows each item with current quantity and details.</p>
-            <div id="productionLogList" class="admin-section-card production-log-wrap"></div>
+            <div class="pl-wrap" id="pl-root">
+
+              <!-- Title -->
+              <div class="pl-title-wrap">
+                <h2>Production Log</h2>
+                <p>Production from Finished Product inventory · Sales from manager-approved orders</p>
+              </div>
+
+              <!-- Filters -->
+              <div class="pl-filters">
+                <div class="pl-filter-group">
+                  <label>Item</label>
+                  <select id="fl-item">
+                    <option value="all">All Items</option>
+                    <!-- Item options will be populated dynamically from data -->
+                  </select>
+                </div>
+                <div class="pl-filter-group">
+                  <label>From</label>
+                  <input type="date" id="fl-from" value="2024-10-01">
+                </div>
+                <div class="pl-filter-group">
+                  <label>To</label>
+                  <input type="date" id="fl-to" value="2025-03-31">
+                </div><div class="pl-filter-group">
+                  <!-- making apply button same like reset and refresh in style-->
+                  <button class="pl-reset-btn" id="fl-apply" style="background: green; color: wheat;">Apply</button>
+                </div>
+                <button class="pl-reset-btn" id="fl-reset">↺ Reset</button>
+                <button class="pl-reset-btn" id="fl-refresh" style="background: rgb(153, 153, 198); color: white">🔄 Refresh</button>
+              </div>
+
+              <!-- Stats -->
+              <div id="pl-stats">
+                <div class="pl-stat-card" style="border-top:3px solid #f59e0b">
+                  <div class="pl-stat-label">Total Produced</div>
+                  <div class="pl-stat-value" style="color:#f59e0b">3,480</div>
+                  <div class="pl-stat-unit">units</div>
+                </div>
+                <div class="pl-stat-card" style="border-top:3px solid #10b981">
+                  <div class="pl-stat-label">Total Sold</div>
+                  <div class="pl-stat-value" style="color:#10b981">2,614</div>
+                  <div class="pl-stat-unit">units</div>
+                </div>
+                <div class="pl-stat-card" style="border-top:3px solid #38bdf8">
+                  <div class="pl-stat-label">Product Types</div>
+                  <div class="pl-stat-value" style="color:#38bdf8">5</div>
+                  <div class="pl-stat-unit">items</div>
+                </div>
+                <div class="pl-stat-card" style="border-top:3px solid #8b5cf6">
+                  <div class="pl-stat-label">Sell-Through Rate</div>
+                  <div class="pl-stat-value" style="color:#8b5cf6">75.1</div>
+                  <div class="pl-stat-unit">%</div>
+                </div>
+              </div>
+
+              <!-- Charts -->
+              <div class="pl-charts-grid">
+                <div class="pl-chart-card">
+                  <div class="pl-chart-inner"><canvas id="barChart"></canvas></div>
+                </div>
+                <div class="pl-chart-card">
+                  <div class="pl-chart-inner"><canvas id="pieChart"></canvas></div>
+                </div>
+                <div class="pl-chart-card wide">
+                  <div class="pl-chart-inner"><canvas id="lineChart"></canvas></div>
+                </div>
+              </div>
+
+              <!-- Table -->
+              <div class="pl-table-card">
+                <div class="pl-table-header">
+                  <h3>Item-by-Item Summary</h3>
+                </div>
+                <div class="pl-table-scroll">
+                  <table class="pl-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Produced</th>
+                        <th>Sold</th>
+                        <th>Remaining</th>
+                        <th>Sell-Through</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pl-tbody"></tbody>
+                    <tfoot>
+                      <tr class="pl-tfoot-row" id="pl-tfoot"></tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+            </div><!-- /.pl-wrap -->
+          </div>
+        </section>
+
+        <!-- Performance: embed performance.html -->
+        <section id="panel-performance" class="admin-panel">
+          <div class="page-container" style="padding:0; height:100%; min-height:calc(100vh - 120px);">
+            <iframe src="performance.html" title="Employee Performance" class="admin-performance-iframe"></iframe>
           </div>
         </section>
         </div>
@@ -303,5 +410,7 @@
 
   <script type="module" src="auth-guard.js"></script>
   <script type="module" src="Admin.js"></script>
+  <script type="module" src="production.js"></script>
+  <script type="module" src="dashboard-header.js"></script>
 </body>
 </html>

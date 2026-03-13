@@ -25,7 +25,7 @@ const inventoryForm = document.getElementById("inventoryForm");
 const problemForm = document.getElementById("problemForm");
 const storageSelect = document.getElementById("invStorageArea");
 const storageOther = document.getElementById("invStorageOther");
-const logoutBtn = document.getElementById("logoutBtn");
+const logoutBtn = document.getElementById("btnSignOut");
 const inventoryListEl = document.getElementById("inventoryList");
 const inventoryCategoryFilterEl = document.getElementById("inventoryCategoryFilter");
 const damageReportsListEl = document.getElementById("damageReportsList");
@@ -85,6 +85,19 @@ function getStorageArea() {
 }
 
 // Event listeners
+
+// Logout
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await signOut(auth);
+      window.location.replace("login.html");
+    } catch (err) {
+      console.error("Logout failed", err);
+      showMessage("Logout failed. Please try again.", true);
+    }
+  });
+}
 
 if (storageSelect && storageOther) {
   storageSelect.addEventListener("change", () => {
@@ -195,18 +208,8 @@ if (problemForm) {
   });
 }
 
-// Handle logout
+// Logout handled by dashboard-header.js
 
-if (logoutBtn) {
-  logoutBtn.addEventListener("click", async () => {
-    try {
-      await signOut(auth);
-      window.location.replace("login.html");
-    } catch (err) {
-      showMessage("Logout failed: " + (err.message || err), true);
-    }
-  });
-}
 
 // ─── View All Inventory ───
 

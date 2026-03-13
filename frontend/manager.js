@@ -14,7 +14,7 @@ let rates = { machine: [], production: [], daily: [] };
 
 //
 const toastEl = document.getElementById('toast');
-const logoutBtn = document.getElementById('logoutBtn');
+const managerSignOutBtn = document.getElementById('btnSignOut');
 const navItems = document.querySelectorAll('.manager-nav-link');
 
 const inpEmployee = document.getElementById('wage-employee');
@@ -69,9 +69,19 @@ onAuthStateChanged(auth, user => {
   if (!user) location.href = 'index.html';
 });
 
-if (logoutBtn) logoutBtn.addEventListener('click', async () => {
-  try { await signOut(auth); window.location.replace("login.html"); } catch (e) { console.error(e); }
-});
+// Logout button
+if (managerSignOutBtn) {
+  managerSignOutBtn.addEventListener('click', async () => {
+    try {
+      await signOut(auth);
+      window.location.replace("login.html");
+    } catch (e) {
+      console.error(e);
+      showToast('Logout failed', 'error');
+    }
+  });
+}
+
 
 // nav
 navItems.forEach(it => {
@@ -80,9 +90,9 @@ navItems.forEach(it => {
     it.classList.add('active');
     document.querySelectorAll('.manager-panel').forEach(panel => panel.classList.remove('active'));
     const section = it.dataset.section;
-    document.getElementById('panel-' + section).classList.add('active');
+    document.getElementById('panel-' + section)?.classList.add('active');
 
-if (section === 'inventory') {
+    if (section === 'inventory') {
       loadManagerInventory();
     }
     if (section === 'damage-reports') {
@@ -90,6 +100,18 @@ if (section === 'inventory') {
     }
     if (section === 'orders') {
       loadManagerOrders();
+    }
+    if (section === 'performance') {
+      const contentEl = document.querySelector('.manager-content-inner');
+      if (contentEl) {
+        const iframe = contentEl.querySelector('iframe');
+        if (!iframe) {
+          contentEl.innerHTML = '<div class="performance-embed-loading">Loading Performance Dashboard...</div>';
+          setTimeout(() => {
+            contentEl.innerHTML = '<iframe src="performance.html#embed" style="width:100%; height:600px; border:none; border-radius:12px;"></iframe>';
+          }, 100);
+        }
+      }
     }
   });
 });
