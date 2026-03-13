@@ -32,7 +32,8 @@
           <li><a href="#" class="employee-nav-link active" data-section="add-inventory">Add Inventory</a></li>
           <li><a href="#" class="employee-nav-link" data-section="report-problem">Report Problem</a></li>
           <li><a href="#" class="employee-nav-link" data-section="view-inventory">View All Inventory</a></li>
-          <li><a href="#" class="employee-nav-link" data-section="damage-reports">Damage Reports</a></li>
+<li><a href="#" class="employee-nav-link" data-section="damage-reports">Damage Reports</a></li>
+<li><a href="#" class="employee-nav-link" data-section="place-order">🛒 Place Order</a></li>
         </ul>
       </nav>
 <!-- main content-->
@@ -187,10 +188,82 @@
           <p class="section-desc">All product problem / damage reports submitted.</p>
           <div id="damageReportsList" class="emp-list"></div>
         </section>
+
+        <!-- Place Order Section -->
+        <section id="panel-place-order" class="employee-panel">
+          <h2>Place Order</h2>
+          <p class="section-desc">Fill product order details. Manager will review and confirm.</p>
+          <form id="orderForm" class="emp-form">
+            <div class="form-group">
+              <label for="orderProduct">Product (Search from Inventory)</label>
+              <input type="text" id="orderProduct" list="product-list" placeholder="Start typing product name or barcode..." required>
+              <datalist id="product-list"></datalist>
+              <input type="hidden" id="orderBarcode">
+              <input type="hidden" id="orderName">
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="orderQty">Quantity</label>
+                <input type="number" id="orderQty" min="1" step="0.01" required>
+              </div>
+              <div class="form-group">
+                <label for="orderUnit">Unit</label>
+                <select id="orderUnit" required>
+                  <option value="">Select unit</option>
+                  <option value="kg">kg</option>
+                  <option value="ltr">ltr</option>
+                  <option value="meter">meter</option>
+                  <option value="piece">piece</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="orderNotes">Notes / Specifications</label>
+              <textarea id="orderNotes" rows="3" placeholder="Any special requirements or notes"></textarea>
+            </div>
+
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="supplierName">Supplier Name (Org/Person)</label>
+                <input type="text" id="supplierName" placeholder="Company or person name">
+              </div>
+              <div class="form-group">
+                <label for="supplierContact">Contact (Phone/Email)</label>
+                <input type="text" id="supplierContact" placeholder="Phone or email">
+              </div>
+            </div>
+
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="supplierAddress">Supplier Address</label>
+                <input type="text" id="supplierAddress" placeholder="Supplier full address">
+              </div>
+              <div class="form-group">
+                <label for="deliveryDate">Expected Delivery date</label>
+                <input type="date" id="deliveryDate" placeholder="Expected delivery date" required>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Submit Order</button>
+          </form>
+        </section>
         </div>
       </main>
+
+      <!-- Employee Modal - copy from manager.html -->
+      <div id="employee-modal" class="modal-overlay" style="display: none;">
+        <div class="employee-modal-content">
+          <div class="modal-header">
+            <h3>Employee Details</h3>
+            <button type="button" class="modal-close" id="modal-close-employee">&times;</button>
+          </div>
+          <div class="modal-body" id="employee-modal-body">
+            <!-- Employee details will be populated here -->
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+
 
   <script type="module" src="auth-guard.js"></script>
   <script type="module" src="employee.js"></script>

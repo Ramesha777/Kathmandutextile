@@ -36,6 +36,7 @@
           <li><a role="button" tabindex="0" class="admin-nav-link active" data-section="employees">Employees &amp; Users</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="add-employee">Add Employee</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="payment-rates">Payment Rates</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="production-log">Production Log</a></li>
         </ul>
       </nav>
 
@@ -51,13 +52,13 @@
           <div class="admin-section-card">
           <form id="addUserForm" class="form-row">
             <div class="form-group">
-              <label for="newUserRef">Name / Employee ID</label>
-              <input type="text" id="newUserRef" list="employeeUserRefList" placeholder="Type employee name or ID" required autocomplete="off">
+              <label for="newUserRef">Select employee (view / identify)</label>
+              <input type="text" id="newUserRef" list="employeeUserRefList" placeholder="Select or type employee name or ID" autocomplete="off">
               <datalist id="employeeUserRefList"></datalist>
             </div>
             <div class="form-group">
-              <label for="newEmail">Email (auto-filled)</label>
-              <input type="email" id="newEmail" placeholder="Auto-filled from employee record" required autocomplete="off" readonly>
+              <label for="newEmail">Email</label>
+              <input type="email" id="newEmail" placeholder="Login email address" required autocomplete="off">
             </div>
             <div class="form-group">
               <label for="newPassword">Password</label>
@@ -70,6 +71,10 @@
                 <option value="Manager">Manager</option>
                 <option value="admin">admin</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label for="adminPasswordToStay">Your password (to stay logged in)</label>
+              <input type="password" id="adminPasswordToStay" placeholder="Enter your password to remain logged in" autocomplete="off">
             </div>
             <div class="form-group">
               <button type="submit" class="btn btn-primary">Add user (grant access)</button>
@@ -280,6 +285,15 @@
             </form>
             <div id="listDaily" class="rate-list"></div>
           </div>
+          </div>
+        </section>
+
+        <!-- Production Log: finished products from inventory -->
+        <section id="panel-production-log" class="admin-panel">
+          <div class="page-container">
+            <h2>Production Log</h2>
+            <p class="admin-desc">View production (finished product) items from inventory. Shows each item with current quantity and details.</p>
+            <div id="productionLogList" class="admin-section-card production-log-wrap"></div>
           </div>
         </section>
         </div>

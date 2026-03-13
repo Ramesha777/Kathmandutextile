@@ -1,7 +1,7 @@
 // manager.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, getDoc, serverTimestamp, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, serverTimestamp, doc, updateDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
 const app = initializeApp(firebaseConfig);
@@ -82,11 +82,14 @@ navItems.forEach(it => {
     const section = it.dataset.section;
     document.getElementById('panel-' + section).classList.add('active');
 
-    if (section === 'inventory') {
+if (section === 'inventory') {
       loadManagerInventory();
     }
     if (section === 'damage-reports') {
       loadManagerDamageReports();
+    }
+    if (section === 'orders') {
+      loadManagerOrders();
     }
   });
 });
@@ -657,17 +660,21 @@ function renderManagerInventoryTable() {
 
   visibleItems.forEach((x) => {
     const qty = x.quantity != null ? x.quantity : '—';
+    const numQty = typeof x.quantity === 'number' && !isNaN(x.quantity) ? x.quantity : (typeof qty === 'number' ? qty : null);
+    const rowClass = numQty != null
+      ? (numQty < 30 ? 'inv-row-low' : numQty < 60 ? 'inv-row-warning' : 'inv-row-ok')
+      : '';
     const unit = x.unit || x.units || '—';
     const purchaseDate = x.purchaseDate || '—';
     const expiryDate = x.expiryDate || '—';
     const hideVendor = isProductionInventoryCategory(x.category);
 
     html += `
-      <tr>
+      <tr class="${rowClass}">
         <td>${escapeHtml(x.barcode)}</td>
         <td>${escapeHtml(x.name)}</td>
         <td>${escapeHtml(x.category)}</td>
-        <td>${escapeHtml(qty)}</td>
+        <td>${qty < 30 ? `<span class="low-stock">${escapeHtml(qty)}</span>` : qty < 60 ? `<span class="warning-stock">${escapeHtml(qty)}</span>` : escapeHtml(qty)}</td>
         <td>${escapeHtml(unit)}</td>
         <td>${escapeHtml(hideVendor ? '—' : (x.vendorName || '—'))}</td>
         <td>${escapeHtml(hideVendor ? '—' : (x.vendorContact || '—'))}</td>
@@ -773,6 +780,375 @@ async function loadManagerDamageReports() {
     console.error(err);
     managerDamageReportsListEl.innerHTML = `<p class='error'>Failed to load damage reports: ${escapeHtml(err.message || err)}</p>`;
   }
+}
+
+// ─── Orders Management ───
+let managerOrders = [];
+
+// Reduce inventory when approving orders
+async function reduceInventoryForOrder(order) {
+  const { productBarcode, productName, quantity } = order;
+  if (!productBarcode || !productName || !(Number(quantity) > 0)) {
+    return { success: false, message: 'Invalid order data' };
+  }
+
+  const searchBarcode = String(productBarcode).toLowerCase().trim();
+  const searchName = String(productName).toLowerCase().trim();
+
+  try {
+    const snap = await getDocs(collection(db, 'inventory'));
+    const candidates = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((inv) => inv.category === 'finished product' &&
+        ((inv.barcode || '').toLowerCase().trim() === searchBarcode ||
+         (inv.name || '').toLowerCase().trim() === searchName));
+
+    if (candidates.length === 0) {
+      return { success: false, message: `No inventory: "${productName}" (${productBarcode})` };
+    }
+
+    const target = candidates.find((inv) => {
+      const invQty = Number(inv.quantity);
+      return !isNaN(invQty) && invQty >= Number(quantity);
+    });
+
+    if (!target) {
+      const totalAvail = candidates.reduce((sum, inv) => sum + (Number(inv.quantity) || 0), 0);
+      return { success: false, message: `Insufficient stock (${totalAvail} available)` };
+    }
+
+    const currentQty = Number(target.quantity) || 0;
+    const newQty = currentQty - Number(quantity);
+    await updateDoc(doc(db, 'inventory', target.id), { quantity: newQty });
+    
+    console.log(`✅ Reduced: ${productName} qty ${quantity} → ${newQty}`);
+    return { success: true };
+  } catch (err) {
+    console.error('Inventory error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
+async function loadManagerOrders() {
+  const ordersListEl = document.getElementById('managerOrdersList');
+  if (!ordersListEl) return;
+  
+  ordersListEl.innerHTML = "<p class='loading-msg'>Loading orders…</p>";
+  
+  try {
+    const snap = await getDocs(collection(db, 'orders'));
+    managerOrders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    managerOrders.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+    
+    if (!managerOrders.length) {
+      ordersListEl.innerHTML = "<p class='empty-msg'>No orders yet.</p>";
+      return;
+    }
+    
+    renderManagerOrdersTable();
+  } catch (err) {
+    console.error(err);
+    ordersListEl.innerHTML = `<p class='error'>Failed to load orders: ${escapeHtml(err.message || err)}</p>`;
+  }
+}
+
+function renderManagerOrdersTable() {
+  const ordersListEl = document.getElementById('managerOrdersList');
+  const statusFilter = document.getElementById('orderStatusFilter')?.value || '';
+  const searchQuery = (document.getElementById('orderSearchQuery')?.value || '').trim().toLowerCase();
+  if (!ordersListEl) return;
+  
+  let filteredOrders = statusFilter
+    ? managerOrders.filter(o => o.status === statusFilter)
+    : managerOrders;
+
+  if (searchQuery) {
+    filteredOrders = filteredOrders.filter((o) => {
+      const phone = String(o.supplierContact || '').toLowerCase();
+      const supplier = String(o.supplierName || '').toLowerCase();
+      return phone.includes(searchQuery) || supplier.includes(searchQuery);
+    });
+  }
+  
+  if (!filteredOrders.length) {
+    ordersListEl.innerHTML = "<p class='empty-msg'>No orders match the filter or search.</p>";
+    return;
+  }
+  
+  let html = `
+    <table class="manager-table">
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Product</th>
+          <th>Barcode</th>
+          <th>Qty</th>
+          <th>Unit</th>
+          <th>Category</th>
+          <th>Supplier</th>
+          <th>Phone</th>
+          <th>Delivery Addr</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  filteredOrders.forEach((order) => {
+    let createdAt = '—';
+    if (order.createdAt?.toDate) {
+      try {
+        createdAt = order.createdAt.toDate().toLocaleDateString();
+      } catch (_) {}
+    }
+    
+    const statusClass = order.status === 'pending' ? 'status-pending' : 
+                       order.status === 'approved' ? 'status-approved' : 'status-rejected';
+    
+    html += `
+      <tr>
+        <td>${escapeHtml(order.employeeName || 'Unknown')}</td>
+        <td>${escapeHtml(order.productName)}</td>
+        <td>${escapeHtml(order.productBarcode)}</td>
+        <td>${escapeHtml(order.quantity)}</td>
+        <td>${escapeHtml(order.unit)}</td>
+        <td>${escapeHtml(order.category)}</td>
+        <td>${escapeHtml(order.supplierName || '—')}</td>
+        <td>${escapeHtml(order.supplierContact || '—')}</td>
+        <td title="${escapeHtml(order.deliveryAddress || '')}">${escapeHtml((order.deliveryAddress || '').length > 30 ? (order.deliveryAddress || '').substring(0, 30) + '...' : (order.deliveryAddress || '—'))}</td>
+        <td><span class="status-badge ${statusClass}">${escapeHtml(order.status?.toUpperCase() || '—')}</span></td>
+        <td>${escapeHtml(createdAt)}</td>
+        <td>
+          <button type="button" class="btn btn-sm btn-outline order-manage-toggle" data-id="${escapeHtml(order.id)}">Manage</button>
+          <div class="order-row-actions" id="order-actions-${escapeHtml(order.id)}" style="display:none; margin-top:6px;">
+            <button type="button" class="btn btn-sm btn-success order-set-approved" data-id="${escapeHtml(order.id)}">Approved</button>
+            <button type="button" class="btn btn-sm btn-warning order-set-pending" data-id="${escapeHtml(order.id)}">Pending</button>
+            <button type="button" class="btn btn-sm btn-danger order-set-rejected" data-id="${escapeHtml(order.id)}">Rejected</button>
+           
+            <button type="button" class="btn btn-sm btn-primary order-delete" data-id="${escapeHtml(order.id)}">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+  
+  html += '</tbody></table>';
+  ordersListEl.innerHTML = html;
+}
+
+// Order actions
+async function restoreInventoryForOrder(order) {
+  const { productBarcode, productName, quantity } = order;
+  if (!productBarcode || !productName || !(Number(quantity) > 0)) {
+    return { success: true };
+  }
+
+  const searchBarcode = String(productBarcode).toLowerCase().trim();
+  const searchName = String(productName).toLowerCase().trim();
+
+  try {
+    const snap = await getDocs(collection(db, 'inventory'));
+    const candidates = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((inv) => inv.category === 'finished product' &&
+        ((inv.barcode || '').toLowerCase().trim() === searchBarcode ||
+         (inv.name || '').toLowerCase().trim() === searchName));
+
+    if (candidates.length === 0) {
+      return { success: false, message: `No inventory: "${productName}" (${productBarcode}) to restore` };
+    }
+
+    // Add back to first matching item
+    const target = candidates[0];
+    const currentQty = Number(target.quantity) || 0;
+    const newQty = currentQty + Number(quantity);
+    await updateDoc(doc(db, 'inventory', target.id), { quantity: newQty });
+    
+    console.log(`✅ Restored: ${productName} qty ${quantity} → ${newQty}`);
+    return { success: true };
+  } catch (err) {
+    console.error('Inventory restore error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  if (e.target.classList.contains('order-approve')) {
+    const orderId = e.target.dataset.id;
+    if (!confirm('Approve this order?\n\n⚠️ This will reduce inventory quantity!')) return;
+    
+    try {
+      // Get order details first
+      const orderDoc = await getDoc(doc(db, 'orders', orderId));
+      const order = orderDoc.data();
+      if (!order) throw new Error('Order not found');
+      
+      // Reduce inventory qty for the ordered product
+      const reduceResult = await reduceInventoryForOrder(order);
+      if (!reduceResult.success) {
+        showToast(reduceResult.message + '\nOrder approved anyway', 'warning');
+      } else {
+        showToast('✅ Inventory reduced → Order approved');
+      }
+      
+      // Update order status
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'approved',
+        approvedBy: auth.currentUser?.uid,
+        approvedByName: auth.currentUser?.displayName || auth.currentUser?.email || 'Manager',
+        approvedAt: serverTimestamp()
+      });
+      
+      await loadManagerOrders();
+      await loadManagerInventory();  // Refresh inventory table
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to approve order: ' + err.message, 'error');
+    }
+  }
+  
+  if (e.target.classList.contains('order-reject')) {
+    const reason = prompt('Rejection reason (optional):');
+    if (!confirm(`Reject this order${reason ? ` - Reason: ${reason}` : ''}?`)) return;
+    
+    const orderId = e.target.dataset.id;
+    
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'rejected',
+        rejectionReason: reason?.trim() || null,
+        approvedBy: auth.currentUser?.uid,
+        approvedByName: auth.currentUser?.displayName || auth.currentUser?.email || 'Manager',
+        approvedAt: serverTimestamp()
+      });
+      showToast('❌ Order rejected');
+      await loadManagerOrders();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to reject order', 'error');
+    }
+    return;
+  }
+
+  if (e.target.classList.contains('order-manage-toggle')) {
+    const orderId = e.target.dataset.id;
+    const panel = document.getElementById(`order-actions-${orderId}`);
+    if (!panel) {
+      console.error('No panel found for orderId:', orderId);
+      return;
+    }
+    const willShow = panel.style.display === 'none';
+    document.querySelectorAll('.order-row-actions').forEach((el) => {
+      el.style.display = 'none';
+    });
+    panel.style.display = willShow ? 'block' : 'none';
+    console.log('Toggle panel for', orderId, 'show:', willShow);
+    return;
+  }
+
+  if (e.target.classList.contains('order-set-approved')) {
+    const orderId = e.target.dataset.id;
+    if (!confirm('Set to Approved? (Reduces inventory)')) return;
+    const orderSnap = await getDoc(doc(db, 'orders', orderId));
+    const order = orderSnap.data();
+    const result = await reduceInventoryForOrder(order);
+    await updateDoc(doc(db, 'orders', orderId), { status: 'approved' });
+    showToast('Status: Approved' + (result.success ? ' + inventory reduced' : ''));
+    loadManagerOrders();
+    return;
+  }
+
+  if (e.target.classList.contains('order-set-pending')) {
+    const orderId = e.target.dataset.id;
+    await updateDoc(doc(db, 'orders', orderId), { status: 'pending' });
+    showToast('Status: Pending');
+    loadManagerOrders();
+    return;
+  }
+
+  if (e.target.classList.contains('order-set-rejected')) {
+    const orderId = e.target.dataset.id;
+    const reason = prompt('Rejection reason:');
+    await updateDoc(doc(db, 'orders', orderId), { status: 'rejected', rejectionReason: reason || null });
+    showToast('Status: Rejected');
+    loadManagerOrders();
+    return;
+  }
+
+  if (e.target.classList.contains('order-edit')) {
+    const orderId = e.target.dataset.id;
+    // Fetch order data
+    try {
+      const orderSnap = await getDoc(doc(db, 'orders', orderId));
+      const order = orderSnap.data();
+      if (!order) return;
+      
+      const productName = prompt('Product name:', order.productName || '');
+      if (productName === null) return;
+      const quantityRaw = prompt('Quantity:', order.quantity != null ? String(order.quantity) : '');
+      if (quantityRaw === null) return;
+      const unit = prompt('Unit:', order.unit || '');
+      if (unit === null) return;
+      
+      const quantity = Number(quantityRaw);
+      if (Number.isNaN(quantity) || quantity <= 0) {
+        showToast('Invalid quantity', 'error');
+        return;
+      }
+      
+      await updateDoc(doc(db, 'orders', orderId), {
+        productName: productName.trim(),
+        quantity,
+        unit: unit.trim() || null
+      });
+      showToast('Order updated');
+      await loadManagerOrders();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to edit order', 'error');
+    }
+    return;
+  }
+
+  if (e.target.classList.contains('order-delete')) {
+    const orderId = e.target.dataset.id;
+    if (!confirm('Delete this order permanently?\\n\\n⚠️ Inventory will be restored if previously approved.')) return;
+    
+    try {
+      // Fetch order details for inventory restore
+      const orderSnap = await getDoc(doc(db, 'orders', orderId));
+      const order = orderSnap.data();
+      if (!order) throw new Error('Order not found');
+      
+      let restoreSuccess = true;
+      if (order.status === 'approved') {
+        const restoreResult = await restoreInventoryForOrder(order);
+        restoreSuccess = restoreResult.success;
+        if (!restoreSuccess) {
+          showToast(restoreResult.message + '\\nOrder deleted anyway.', 'warning');
+        }
+      }
+      
+      await deleteDoc(doc(db, 'orders', orderId));
+      
+      const msg = restoreSuccess ? 'Order deleted' + (order.status === 'approved' ? ' & inventory restored' : '') : 'Order deleted';
+      showToast(msg);
+      await loadManagerOrders();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to delete order: ' + err.message, 'error');
+    }
+    return;
+  }
+});
+
+if (document.getElementById('orderStatusFilter')) {
+  document.getElementById('orderStatusFilter').addEventListener('change', renderManagerOrdersTable);
+}
+if (document.getElementById('orderSearchQuery')) {
+  document.getElementById('orderSearchQuery').addEventListener('input', renderManagerOrdersTable);
 }
 
 if (managerInventoryCategoryFilterEl) {

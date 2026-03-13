@@ -149,7 +149,6 @@ body.employee-page {
   color: #991b1b;
 }
 
-
 .section-desc {
   color: var(--gray);
   font-size: 0.9rem;
@@ -286,6 +285,200 @@ body.employee-page {
   padding: 1rem;
 }
 
+/* Low inventory stock colors */
+.emp-table .low-stock {
+  color: #ef4444;
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+.emp-table .warning-stock {
+  color: #d97706;
+  font-weight: 600;
+  background: rgba(251, 191, 36, 0.2);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+/* Inventory row highlight by quantity */
+.emp-table tbody tr.inv-row-low {
+  background-color: rgba(254, 226, 226, 0.6);
+}
+.emp-table tbody tr.inv-row-low:hover {
+  background-color: rgba(254, 226, 226, 0.85);
+}
+.emp-table tbody tr.inv-row-warning {
+  background-color: rgba(254, 249, 195, 0.6);
+}
+.emp-table tbody tr.inv-row-warning:hover {
+  background-color: rgba(254, 249, 195, 0.85);
+}
+.emp-table tbody tr.inv-row-ok {
+  background-color: rgba(219, 234, 254, 0.5);
+}
+.emp-table tbody tr.inv-row-ok:hover {
+  background-color: rgba(219, 234, 254, 0.8);
+}
+
+/* Employee Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.employee-modal-content {
+  background: white;
+  border-radius: 12px;
+  max-width: 550px;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--dark);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.75rem;
+  color: var(--gray);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--dark);
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.employee-modal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.employee-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.employee-modal-header-info h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.3rem;
+}
+
+.employee-modal-badge {
+  background: var(--primary);
+  color: white;
+  padding: 0.25rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.employee-modal-photo-wrap {
+  flex-shrink: 0;
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+
+.employee-modal-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.employee-modal-photo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+  font-weight: 700;
+  font-size: 1.5rem;
+}
+
+.employee-modal-body-section {
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.employee-modal-body-section h5 {
+  margin: 0 0 0.75rem 0;
+  color: var(--dark);
+  font-size: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0.5rem;
+}
+
+.employee-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.employee-modal-id-section {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.employee-modal-id-photo {
+  display: inline-block;
+}
+
+.employee-modal-id-photo img {
+  max-width: 120px;
+  max-height: 160px;
+  border-radius: 8px;
+  border: 2px solid #e5e7eb;
+}
+
+.employee-modal-no-photo {
+  color: var(--gray);
+  font-style: italic;
+}
+
+@media (max-width: 480px) {
+  .employee-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 768px) {
   .employee-body {
     flex-direction: column;
@@ -323,3 +516,4 @@ body.employee-page {
     border-bottom-color: var(--primary);
   }
 }
+

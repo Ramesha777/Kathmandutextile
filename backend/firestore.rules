@@ -40,5 +40,20 @@ service cloud.firestore {
     match /employees/{id} {
       allow read, write: if request.auth != null && isAdmin();
     }
+
+    // Orders: employee create own pending, Manager read/write all, admin full access
+    match /orders/{orderId} {
+      allow create: if request.auth != null 
+        && request.resource.data.status == 'pending'
+        && request.resource.data.employeeId == request.auth.uid;
+      
+      allow read: if request.auth != null;
+      
+      allow update: if request.auth != null 
+        && (resource.data.employeeId == request.auth.uid 
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['Manager', 'admin']);
+      
+      allow delete: if request.auth != null && isAdmin();
+    }
   }
 }

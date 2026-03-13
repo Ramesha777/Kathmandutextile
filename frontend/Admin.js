@@ -3,7 +3,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import {
   getAuth,
   createUserWithEmailAndPassword,
-  signOut
+  signOut,
+  signInWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore,
@@ -86,7 +87,7 @@ function renderUserTable(users) {
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Email</th>
+          <th>Name</th>
           <th>Role</th>
           <th>Actions</th>
         </tr>
@@ -94,12 +95,13 @@ function renderUserTable(users) {
       <tbody>
   `;
   for (const u of users) {
-    const email = u.email || u.uid || "—";
+    const displayName = (u.displayName || u.name || "").trim() || (u.email || u.uid || "—");
+    const email = u.email || u.uid || "";
     const role = (u.role || "employee").trim();
     const isSelf = u.uid === currentUid;
     html += `
       <tr data-uid="${u.uid}">
-        <td>${escapeHtml(email)}</td>
+        <td title="${escapeHtml(email || "—")}">${escapeHtml(displayName)}</td>
         <td>
           <select class="role-select" data-uid="${u.uid}" ${isSelf ? "disabled" : ""}>
             ${ROLES.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${r}</option>`).join("")}
@@ -174,10 +176,9 @@ function resolveEmployeeFromRef(rawValue) {
   return found || null;
 }
 
+// No auto-fill: employee dropdown is for view/select only; admin enters email manually.
 function autofillUserEmailFromEmployeeRef() {
-  if (!newUserRefInput || !newEmailInput) return;
-  const found = resolveEmployeeFromRef(newUserRefInput.value);
-  newEmailInput.value = found?.email || "";
+  // Intentionally empty: email is entered manually when granting access.
 }
 
 async function updateRole(uid, newRole) {
@@ -212,7 +213,7 @@ function removeUser(uid) {
   );
 }
 
-async function addUser(email, password, role) {
+async function addUser(email, password, role, displayName) {
   hideMessage();
   if (!email || !password || !role) {
     showMessage("Please fill email, password, and role.", true);
@@ -222,6 +223,8 @@ async function addUser(email, password, role) {
     showMessage("Invalid role.", true);
     return;
   }
+  const adminEmail = auth.currentUser?.email;
+  const adminPassword = document.getElementById("adminPasswordToStay")?.value?.trim() || "";
   const submitBtn = addUserForm?.querySelector('button[type="submit"]');
   if (submitBtn) {
     submitBtn.disabled = true;
@@ -231,11 +234,19 @@ async function addUser(email, password, role) {
     const userCred = await createUserWithEmailAndPassword(auth, email, password);
     await setDoc(doc(db, "users", userCred.user.uid), {
       email: email.trim(),
-      role: role
+      role: role,
+      displayName: displayName || null
     });
     await signOut(auth);
-    window.location.replace("login.html?msg=User+created.+Please+sign+in+again.");
-    return;
+    if (adminEmail && adminPassword) {
+      await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+      showMessage("User created. You are still logged in.");
+      loadUsers();
+      addUserForm?.reset();
+    } else {
+      window.location.replace("login.html?msg=User+created.+Please+sign+in+again.");
+      return;
+    }
   } catch (err) {
     let msg = err.message || "Failed to create user.";
     if (err.code === "auth/email-already-in-use") msg = "This email is already registered.";
@@ -757,6 +768,7 @@ function showPanel(sectionId) {
   if (panel) panel.classList.add("active");
   if (link) link.classList.add("active");
   if (sectionId === "add-employee") loadEmployeeRecords();
+  if (sectionId === "production-log") loadProductionLog();
 }
 const COLLECTION_MACHINE_OPS = "rates_machineOperators";
 const COLLECTION_PRODUCTIONS = "rates_productions";
@@ -892,6 +904,65 @@ function getSelectedProductName() {
     return normalizeText(otherInput?.value);
   }
   return normalizeText(productSelect.value);
+}
+
+// ─── Production Log (finished product items from inventory) ───
+async function loadProductionLog() {
+  const listEl = document.getElementById("productionLogList");
+  if (!listEl) return;
+  listEl.innerHTML = "<p class='loading-msg'>Loading production log…</p>";
+  try {
+    const snap = await getDocs(collection(db, "inventory"));
+    const items = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((x) => isFinishedProductCategory(x.category));
+    items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    if (items.length === 0) {
+      listEl.innerHTML = "<p class='empty-msg'>No finished product items in inventory. Add inventory with category \"Finished product\".</p>";
+      return;
+    }
+    renderProductionLogTable(listEl, items);
+  } catch (err) {
+    listEl.innerHTML = "<p class='error'>Failed to load production log: " + escapeHtml(err.message || err) + "</p>";
+  }
+}
+
+function renderProductionLogTable(container, items) {
+  if (!container) return;
+  let html = `
+    <table class="admin-table production-log-table">
+      <thead>
+        <tr>
+          <th>Barcode / ID</th>
+          <th>Product name</th>
+          <th>Quantity</th>
+          <th>Unit</th>
+          <th>Storage area</th>
+          <th>Purchase date</th>
+          <th>Expiry date</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const x of items) {
+    const qty = x.quantity != null ? x.quantity : "—";
+    const unit = x.unit || x.units || "—";
+    const purchaseDate = x.purchaseDate || "—";
+    const expiryDate = x.expiryDate || "—";
+    html += `
+      <tr>
+        <td>${escapeHtml(x.barcode || x.id || "—")}</td>
+        <td>${escapeHtml(x.name || "—")}</td>
+        <td>${escapeHtml(qty)}</td>
+        <td>${escapeHtml(unit)}</td>
+        <td>${escapeHtml(x.storageArea || "—")}</td>
+        <td>${escapeHtml(purchaseDate)}</td>
+        <td>${escapeHtml(expiryDate)}</td>
+      </tr>
+    `;
+  }
+  html += "</tbody></table>";
+  container.innerHTML = html;
 }
 
 async function loadRates(collectionName) {
@@ -1186,19 +1257,12 @@ function init() {
   if (addUserForm) {
     addUserForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const found = resolveEmployeeFromRef(document.getElementById("newUserRef")?.value);
-      if (!found) {
-        showMessage("Please select a valid employee Name/ID from records.", true);
-        return;
-      }
-      if (!found.email) {
-        showMessage("Selected employee does not have an email in records.", true);
-        return;
-      }
-      const email = found.email.trim();
+      const email = document.getElementById("newEmail")?.value?.trim();
       const password = document.getElementById("newPassword")?.value;
       const role = document.getElementById("newRole")?.value;
-      addUser(email, password, role);
+      const found = resolveEmployeeFromRef(document.getElementById("newUserRef")?.value);
+      const displayName = found?.fullName || null;
+      addUser(email, password, role, displayName);
     });
   }
 

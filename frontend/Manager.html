@@ -33,7 +33,8 @@
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="employees">🧑‍🤝‍🧑Employees</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="slips"> Payslips</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="inventory">📦 Inventory</a></li>
-          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="damage-reports">⚠️ Damage Reports</a></li>
+<li><a role="button" tabindex="0" class="manager-nav-link" data-section="damage-reports">⚠️ Damage Reports</a></li>
+<li><a role="button" tabindex="0" class="manager-nav-link" data-section="orders">📋 Manage Orders</a></li>
         </ul>
       </nav>
 
@@ -238,6 +239,28 @@
           <h2>Damage Reports</h2>
           <p class="manager-desc">View all product problem / damage reports submitted.</p>
           <div id="managerDamageReportsList"></div>
+        </section>
+
+        <!-- Manage Orders Section -->
+        <section id="panel-orders" class="manager-panel">
+          <h2>Manage Orders</h2>
+          <p class="manager-desc">Review and confirm/reject employee product orders.</p>
+          <div class="manager-orders-filters" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+            <div class="form-group" style="max-width: 280px;">
+              <label for="orderSearchQuery">Search by phone or supplier name</label>
+              <input type="text" id="orderSearchQuery" placeholder="Phone number or supplier name..." autocomplete="off" style="width: 100%;">
+            </div>
+            <div class="form-group" style="max-width: 200px;">
+              <label for="orderStatusFilter">Filter by status</label>
+              <select id="orderStatusFilter">
+                <option value="">All Orders</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
+          <div id="managerOrdersList" class="manager-orders-list"></div>
         </section>
         </div>
       </main>

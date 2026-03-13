@@ -6,7 +6,9 @@ import {
   collection,
   getDocs,
   addDoc,
-  serverTimestamp
+  serverTimestamp,
+  query,
+  where
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
@@ -28,6 +30,13 @@ const inventoryListEl = document.getElementById("inventoryList");
 const inventoryCategoryFilterEl = document.getElementById("inventoryCategoryFilter");
 const damageReportsListEl = document.getElementById("damageReportsList");
 
+// Employee table elements
+const employeeSearchInput = document.getElementById('employee-search');
+const employeeModal = document.getElementById('employee-modal');
+const employeeModalBody = document.getElementById('employee-modal-body');
+const modalCloseEmployee = document.getElementById('modal-close-employee');
+
+
 // Utility functions
 
 function escapeHtml(str) {
@@ -39,6 +48,7 @@ function escapeHtml(str) {
 
 // Show a specific panel and hide others
 
+
 function showPanel(sectionId) {
   document.querySelectorAll(".employee-panel").forEach((p) => p.classList.remove("active"));
   document.querySelectorAll(".employee-nav-link").forEach((a) => a.classList.remove("active"));
@@ -48,7 +58,9 @@ function showPanel(sectionId) {
   if (link) link.classList.add("active");
   if (sectionId === "view-inventory") loadInventoryList();
   if (sectionId === "damage-reports") loadDamageReports();
+  if (sectionId === "employees") loadEmployees();
 }
+
 
 // Show a message (error or success)
 
@@ -283,15 +295,19 @@ function renderInventoryTable() {
     const purchaseDate = x.purchaseDate || "—";
     const expiryDate = x.expiryDate || "—";
     const qty = x.quantity != null ? x.quantity : "—";
+    const numQty = typeof x.quantity === 'number' && !isNaN(x.quantity) ? x.quantity : (typeof qty === 'number' ? qty : null);
+    const rowClass = numQty != null
+      ? (numQty < 30 ? 'inv-row-low' : numQty < 60 ? 'inv-row-warning' : 'inv-row-ok')
+      : '';
     const unit = x.unit || x.units || "—";
     const hideVendor = isProductionInventoryCategory(x.category);
 
     html += `
-      <tr>
+      <tr class="${rowClass}">
         <td>${escapeHtml(x.barcode)}</td>
         <td>${escapeHtml(x.name)}</td>
         <td>${escapeHtml(x.category)}</td>
-        <td>${escapeHtml(qty)}</td>
+        <td class="inventory-qty">${escapeHtml(qty)}</td>
         <td>${escapeHtml(unit)}</td>
         <td>${escapeHtml(hideVendor ? "—" : (x.vendorName || "—"))}</td>
         <td>${escapeHtml(hideVendor ? "—" : (x.vendorContact || "—"))}</td>
@@ -392,8 +408,146 @@ async function loadDamageReports() {
   }
 }
 
-// Nav: switch section
+// Load inventory products for order dropdown (finished products only)
+let inventoryProducts = [];
+async function loadInventoryProducts() {
+  try {
+    const q = query(collection(db, "inventory"));
+    const snap = await getDocs(q);
+    inventoryProducts = snap.docs
+      .map(d => {
+        const data = d.data();
+        const name = data.name || data.id || 'Product';
+        const barcode = data.barcode || data.id || 'N/A';
+        if (!data.name && !data.barcode) {
+          console.warn(`Inventory doc ${d.id} missing name/barcode for finished product display`);
+        }
+        return { 
+          id: d.id, 
+          ...data, 
+          display: `${name} (${barcode})`,
+          _name: data.name,
+          _barcode: data.barcode 
+        };
+      })
+      .filter(p => p.category === "finished product")
+      .sort((a, b) => (a._name || a.id).localeCompare(b._name || b.id));
+    
+    const datalist = document.getElementById("product-list");
+    if (datalist) {
+      datalist.innerHTML = inventoryProducts.map(p => 
+        `<option value="${p.display}" data-barcode="${p._barcode || p.id || ''}" data-name="${p._name || p.id || ''}" data-unit="${p.unit || ''}">`
+      ).join('');
+    }
+    
+    if (inventoryProducts.length === 0) {
+      console.warn('No finished products found in inventory. Add some with category="finished product".');
+    }
+  } catch (err) {
+    console.error('Failed to load products:', err);
+  }
+}
 
+// Product search input handler
+const orderProductInput = document.getElementById("orderProduct");
+if (orderProductInput) {
+  orderProductInput.addEventListener("input", (e) => {
+    const value = e.target.value;
+    const options = document.querySelectorAll("#product-list option");
+    
+    for (const opt of options) {
+      if (opt.value === value) {
+        document.getElementById("orderBarcode").value = opt.dataset.barcode || '';
+        document.getElementById("orderName").value = opt.dataset.name || value.split(' (')[0] || 'Product';
+        document.getElementById("orderUnit").value = opt.dataset.unit || '';
+        break;
+      }
+    }
+  });
+}
+
+// Load products on page load
+loadInventoryProducts();
+
+// Handle order form submission
+const orderForm = document.getElementById("orderForm");
+if (orderForm) {
+  orderForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    
+    // Read form values
+    const orderBarcodeEl = document.getElementById("orderBarcode");
+    const orderNameEl = document.getElementById("orderName");
+    const orderQtyEl = document.getElementById("orderQty");
+    const orderUnitEl = document.getElementById("orderUnit");
+    const orderNotesEl = document.getElementById("orderNotes");
+    const supplierNameEl = document.getElementById("supplierName");
+    const supplierContactEl = document.getElementById("supplierContact");
+    const supplierAddressEl = document.getElementById("supplierAddress");
+    const deliveryDateEl = document.getElementById("deliveryDate");
+    
+    const barcode = orderBarcodeEl?.value?.trim() || '';
+    const productName = orderNameEl?.value?.trim() || '';
+    const qty = orderQtyEl?.value?.trim();
+    const unit = orderUnitEl?.value?.trim();
+    const notes = orderNotesEl?.value?.trim();
+    const supplierName = supplierNameEl?.value?.trim();
+    const supplierContact = supplierContactEl?.value?.trim();
+    const deliveryAddress = supplierAddressEl?.value?.trim();  // supplierAddress → deliveryAddress
+    const deliveryDate = deliveryDateEl?.value?.trim();
+    
+    // Define missing category from finished products context
+    const category = 'finished product';
+    
+    // Validation
+    if (!productName || !barcode || !qty || isNaN(Number(qty)) || Number(qty) <= 0 || 
+        !unit || !deliveryDate || !supplierName || !supplierContact || !deliveryAddress) {
+      showMessage("Please select a product, fill all required fields (Qty, Unit, Supplier details, Delivery date).", true);
+      return;
+    }
+
+    const submitBtn = orderForm.querySelector('button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting…";
+    }
+
+    try {
+      await addDoc(collection(db, "orders"), {
+        employeeId: auth.currentUser?.uid,
+        employeeName: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+        productBarcode: barcode,
+        productName,
+        category,
+        quantity: Number(qty),
+        unit,
+        notes: notes || null,
+        supplierName,
+        supplierContact,
+        supplierAddress: supplierName || null,  // Keep original supplierAddress field
+        deliveryAddress,
+        status: "pending",
+        deliveryDate,
+        createdAt: serverTimestamp()
+      });
+      showMessage("✅ Order submitted successfully! Manager will review.");
+      orderForm.reset();
+      // Clear hidden fields
+      if (orderBarcodeEl) orderBarcodeEl.value = '';
+      if (orderNameEl) orderNameEl.value = '';
+    } catch (err) {
+      console.error("Order submit error:", err);
+      showMessage("❌ Failed to submit order: " + (err.message || err), true);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit Order";
+      }
+    }
+  });
+}
+
+// Nav: switch section
 loadUserNameMap();
 
 document.querySelectorAll(".employee-nav-link").forEach((a) => {
