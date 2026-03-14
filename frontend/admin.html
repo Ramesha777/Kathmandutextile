@@ -214,10 +214,11 @@
           <p class="admin-desc">Define rates for Machine Operators (fibres per meter), Productions (pay per product), and Daily (hourly wages). Stored in Firebase.</p>
               <!-- add buttons on same line-->
 
-          <div class="rate-filters" style="margin-bottom: 1.5rem; display: flex; gap: 12px; width: 100%; justify-content: center;">
+          <div class="rate-filters" style="margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 12px; width: 100%; justify-content: center;">
             <button type="button" class="btn btn-sm btn-primary rate-filter-btn" data-target="block-machine" style="width:12rem;">Machine Operators</button>
             <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-production" style="width:12rem;">Productions</button>
             <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-daily" style="width:12rem;">Daily Wages</button>
+            <button type="button" class="btn btn-sm btn-outline rate-filter-btn" data-target="block-selling" style="width:12rem;">Selling Rates</button>
           </div>
 
           <div id="block-machine" class="rate-block">
@@ -293,6 +294,44 @@
               </div>
             </form>
             <div id="listDaily" class="rate-list"></div>
+          </div>
+
+          <!-- Selling rates: finished product prices for invoices -->
+          <div id="block-selling" class="rate-block" style="display: none;">
+            <h3>Selling Rates (Finished Products)</h3>
+            <p class="rate-desc">Set selling prices for finished products. Used in order invoices.</p>
+            <form id="formSelling" class="form-row form-row-compact">
+              <div class="form-group">
+                <label for="sellingProductName">Product name</label>
+                <select id="sellingProductName" required>
+                  <option value="">Select product</option>
+                  <option value="__other__">Other (type manually)</option>
+                </select>
+              </div>
+              <div class="form-group" id="sellingProductNameOtherWrap" style="display: none;">
+                <label for="sellingProductNameOther">Other product name</label>
+                <input type="text" id="sellingProductNameOther" placeholder="Enter product name">
+              </div>
+              <div class="form-group">
+                <label for="sellingUnit">Unit</label>
+                <select id="sellingUnit">
+                  <option value="piece">piece</option>
+                  <option value="meter">meter</option>
+                  <option value="KG">KG</option>
+                  <option value="Koiree">Koiree</option>
+                  <option value="day">day</option>
+                  <option value="hour">hour</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="sellingPrice">Selling price (Rs.)</label>
+                <input type="number" id="sellingPrice" placeholder="0" min="0" step="0.01" required>
+              </div>
+              <div class="form-group">
+                <button type="submit" class="btn btn-primary">Add</button>
+              </div>
+            </form>
+            <div id="listSelling" class="rate-list"></div>
           </div>
           </div>
         </section>

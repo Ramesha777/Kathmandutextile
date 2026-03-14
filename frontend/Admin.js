@@ -762,6 +762,7 @@ function showPanel(sectionId) {
 const COLLECTION_MACHINE_OPS = "rates_machineOperators";
 const COLLECTION_PRODUCTIONS = "rates_productions";
 const COLLECTION_DAILY = "rates_daily";
+const COLLECTION_SELLING = "rates_selling";
 
 function normalizeText(v) {
   return String(v == null ? "" : v).trim();
@@ -990,6 +991,117 @@ function renderDaily(listEl, items) {
   attachRateListeners(listEl);
 }
 
+function renderSellingRates(listEl, items) {
+  if (!listEl) return;
+  if (items.length === 0) {
+    listEl.innerHTML = "<p class='empty-msg'>No selling rates yet. Add one above (finished products only).</p>";
+    return;
+  }
+  let html = `<table class="admin-table"><thead><tr><th>Product</th><th>Unit</th><th>Selling price (Rs.)</th><th>Actions</th></tr></thead><tbody>`;
+  for (const x of items) {
+    const name = escapeHtml(x.productName || x.name || "—");
+    const unit = escapeHtml(x.unit || "piece");
+    const rate = Number(x.sellingPrice ?? x.rate ?? 0);
+    html += `<tr data-id="${x.id}">
+      <td>${name}</td>
+      <td>${unit}</td>
+      <td><input type="number" class="inline-edit" data-id="${x.id}" value="${rate}" min="0" step="0.01" data-collection="${COLLECTION_SELLING}"></td>
+      <td><button type="button" class="btn btn-sm btn-danger btn-rate-remove" data-id="${x.id}" data-collection="${COLLECTION_SELLING}">Remove</button></td>
+    </tr>`;
+  }
+  html += "</tbody></table>";
+  listEl.innerHTML = html;
+  attachRateListeners(listEl);
+}
+
+async function loadSellingProductOptions() {
+  const sel = document.getElementById("sellingProductName");
+  if (!sel) return;
+  const currentValue = sel.value;
+  try {
+    const [invSnap, ratesSnap] = await Promise.all([
+      getDocs(collection(db, "inventory")),
+      getDocs(collection(db, COLLECTION_SELLING))
+    ]);
+    const namesSet = new Set();
+    invSnap.forEach((d) => {
+      const item = d.data() || {};
+      if (!isFinishedProductCategory(item.category)) return;
+      const n = normalizeText(item.name);
+      if (n) namesSet.add(n);
+    });
+    ratesSnap.forEach((d) => {
+      const r = d.data() || {};
+      const n = normalizeText(r.productName || r.name);
+      if (n) namesSet.add(n);
+    });
+    const names = Array.from(namesSet).sort((a, b) => a.localeCompare(b));
+    const options = [
+      `<option value="">Select product</option>`,
+      ...names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`),
+      `<option value="__other__">Other (type manually)</option>`
+    ];
+    sel.innerHTML = options.join("");
+    const shouldKeep = names.includes(currentValue) || currentValue === "__other__" || currentValue === "";
+    sel.value = shouldKeep ? currentValue : "";
+  } catch (err) {
+    console.error("Failed to load selling product options:", err);
+    sel.innerHTML = `<option value="">Select product</option><option value="__other__">Other (type manually)</option>`;
+  }
+  toggleOtherSellingProductInput();
+}
+
+function toggleOtherSellingProductInput() {
+  const sel = document.getElementById("sellingProductName");
+  const wrap = document.getElementById("sellingProductNameOtherWrap");
+  const otherInput = document.getElementById("sellingProductNameOther");
+  if (!sel || !wrap || !otherInput) return;
+  const isOther = sel.value === "__other__";
+  wrap.style.display = isOther ? "block" : "none";
+  otherInput.required = isOther;
+  if (!isOther) otherInput.value = "";
+}
+
+function getSelectedSellingProductName() {
+  const sel = document.getElementById("sellingProductName");
+  const otherInput = document.getElementById("sellingProductNameOther");
+  if (!sel) return "";
+  if (sel.value === "__other__") return normalizeText(otherInput?.value);
+  return normalizeText(sel.value);
+}
+
+async function addSellingRate() {
+  hideMessage();
+  const name = getSelectedSellingProductName();
+  const unit = document.getElementById("sellingUnit")?.value?.trim() || "piece";
+  const price = parseFloat(document.getElementById("sellingPrice")?.value);
+  if (!name) {
+    showMessage("Select or enter product name.", true);
+    return;
+  }
+  if (price == null || isNaN(price) || price < 0) {
+    showMessage("Enter a valid selling price.", true);
+    return;
+  }
+  try {
+    await addDoc(collection(db, COLLECTION_SELLING), {
+      productName: name,
+      name: name,
+      unit,
+      sellingPrice: Number(price),
+      rate: Number(price)
+    });
+    showMessage("Selling rate added.");
+    document.getElementById("sellingProductName").value = "";
+    document.getElementById("sellingProductNameOther").value = "";
+    document.getElementById("sellingPrice").value = "";
+    toggleOtherSellingProductInput();
+    loadAllRates();
+  } catch (err) {
+    showMessage("Failed to add: " + (err.message || err), true);
+  }
+}
+
 function attachRateListeners(container) {
   if (!container) return;
   container.querySelectorAll(".inline-edit").forEach((input) => {
@@ -1014,6 +1126,8 @@ async function updateRate(collectionName, id, nameField, numberValue) {
       await setDoc(ref, { ...existing, ratePerPiece: numberValue }, { merge: true });
     } else if (collectionName === COLLECTION_DAILY) {
       await setDoc(ref, { ...existing, hourlyRate: numberValue }, { merge: true });
+    } else if (collectionName === COLLECTION_SELLING) {
+      await setDoc(ref, { ...existing, sellingPrice: numberValue, rate: numberValue }, { merge: true });
     }
     showMessage("Rate updated.");
     loadAllRates();
@@ -1038,23 +1152,29 @@ async function loadAllRates() {
   const listMachineOps = document.getElementById("listMachineOps");
   const listProductions = document.getElementById("listProductions");
   const listDaily = document.getElementById("listDaily");
+  const listSelling = document.getElementById("listSelling");
   try {
     listMachineOps && (listMachineOps.innerHTML = "<p class='loading-msg'>Loading…</p>");
     listProductions && (listProductions.innerHTML = "<p class='loading-msg'>Loading…</p>");
     listDaily && (listDaily.innerHTML = "<p class='loading-msg'>Loading…</p>");
-    const [ops, prods, daily] = await Promise.all([
+    listSelling && (listSelling.innerHTML = "<p class='loading-msg'>Loading…</p>");
+    const [ops, prods, daily, selling] = await Promise.all([
       loadRates(COLLECTION_MACHINE_OPS),
       loadRates(COLLECTION_PRODUCTIONS),
-      loadRates(COLLECTION_DAILY)
+      loadRates(COLLECTION_DAILY),
+      loadRates(COLLECTION_SELLING)
     ]);
     renderMachineOps(listMachineOps, ops);
     renderProductions(listProductions, prods);
     renderDaily(listDaily, daily);
+    renderSellingRates(listSelling, selling);
+    loadSellingProductOptions();
   } catch (err) {
     showMessage("Failed to load rates: " + (err.message || err), true);
     listMachineOps && (listMachineOps.innerHTML = "<p class='error'>Failed to load.</p>");
     listProductions && (listProductions.innerHTML = "<p class='error'>Failed to load.</p>");
     listDaily && (listDaily.innerHTML = "<p class='error'>Failed to load.</p>");
+    listSelling && (listSelling.innerHTML = "<p class='error'>Failed to load.</p>");
   }
 }
 
@@ -1271,6 +1391,12 @@ function init() {
   document.getElementById("formDaily")?.addEventListener("submit", (e) => {
     e.preventDefault();
     addDaily(document.getElementById("dailyLabel")?.value?.trim(), document.getElementById("dailyRate")?.value);
+  });
+
+  document.getElementById("sellingProductName")?.addEventListener("change", toggleOtherSellingProductInput);
+  document.getElementById("formSelling")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addSellingRate();
   });
 
   if (logoutBtn) {

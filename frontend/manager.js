@@ -1433,8 +1433,12 @@ function renderPayslipPreview(data) {
 }
 
 async function generatePayslipPDF(data) {
+  if (!window.jspdf?.jsPDF) {
+    throw new Error('PDF library not loaded. Please refresh the page.');
+  }
   const { jsPDF } = window.jspdf;
   const pdfDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
   const pageW = pdfDoc.internal.pageSize.getWidth();
   let y = 14;
 
@@ -1534,17 +1538,35 @@ async function downloadSlipPDF() {
   const empId = selSlipEmployee?.value?.trim();
   const month = selSlipMonth?.value;
   const year = selSlipYear?.value || String(new Date().getFullYear());
-  if (!empId || !month) { showToast('Select employee and month.', 'error'); return; }
+  if (!empId || !month) { 
+    showToast('Please select employee and month first.', 'error'); 
+    return; 
+  }
+  
+  if (!window.jspdf?.jsPDF) {
+    showToast('PDF library failed to load. Please refresh the page.', 'error');
+    return;
+  }
+  
   try {
     const data = await getSlipData(empId, month, year);
-    if (!data || data.entries.length === 0) { showToast('No wage data for selected period.', 'error'); return; }
+    if (!data) {
+      showToast('Employee not found.', 'error');
+      return;
+    }
+    if (data.entries.length === 0) { 
+      showToast('No wage entries found for this employee and period.', 'error'); 
+      return; 
+    }
+    
     const pdfDoc = await generatePayslipPDF(data);
-    const name = (data.emp.fullName || data.emp.name || 'Employee').replace(/\s+/g, '_');
-    pdfDoc.save(`Payslip_${name}_${month}_${year}.pdf`);
-    showToast('PDF downloaded.');
+    const empName = (data.emp.fullName || data.emp.name || 'Employee').replace(/[^a-zA-Z0-9]/g, '_');
+    const safeMonth = month.replace(/[^a-zA-Z]/g, '');
+    pdfDoc.save(`KTT-Payslip_${empName}_${safeMonth}_${year}.pdf`);
+    showToast(`✅ Payslip downloaded for ${data.emp.fullName || data.emp.name || 'employee'}`, 'success');
   } catch (err) {
-    console.error(err);
-    showToast('Failed to generate PDF.', 'error');
+    console.error('PDF generation failed:', err);
+    showToast(`❌ Failed to generate PDF: ${err.message || 'Unknown error'}`, 'error');
   }
 }
 
@@ -1632,8 +1654,37 @@ async function loadWageEntries() {
   }
 }
 
-if (btnPreviewSlip) btnPreviewSlip.addEventListener('click', showSlipPreview);
-if (btnDownloadSlip) btnDownloadSlip.addEventListener('click', downloadSlipPDF);
+if (btnPreviewSlip) {
+  btnPreviewSlip.addEventListener('click', async () => {
+    const originalText = btnPreviewSlip.textContent;
+    btnPreviewSlip.disabled = true;
+    btnPreviewSlip.textContent = 'Loading...';
+    try {
+      await showSlipPreview();
+    } finally {
+      btnPreviewSlip.disabled = false;
+      btnPreviewSlip.textContent = originalText;
+    }
+  });
+}
+
+if (btnDownloadSlip) {
+  btnDownloadSlip.addEventListener('click', async () => {
+    const originalText = btnDownloadSlip.textContent;
+    btnDownloadSlip.disabled = true;
+    btnDownloadSlip.textContent = 'Generating...';
+    try {
+      await downloadSlipPDF();
+    } catch (err) {
+      console.error('Download failed:', err);
+      showToast('Download failed: ' + (err.message || 'Please try again'), 'error');
+    } finally {
+      btnDownloadSlip.disabled = false;
+      btnDownloadSlip.textContent = originalText;
+    }
+  });
+}
+
 if (btnShareSlip) {
   btnShareSlip.addEventListener('click', () => {
     if (!selSlipEmployee?.value || !selSlipMonth?.value) {
@@ -1642,6 +1693,71 @@ if (btnShareSlip) {
     }
     document.getElementById('share-modal')?.style?.setProperty('display', 'flex');
   });
+}
+
+// Share modal handlers
+if (btnShareEmail) {
+  btnShareEmail.addEventListener('click', async () => {
+    try {
+      const originalText = btnShareEmail.textContent;
+      btnShareEmail.disabled = true;
+      btnShareEmail.textContent = 'Generating...';
+      
+      const empId = selSlipEmployee.value;
+      const month = selSlipMonth.value;
+      const year = selSlipYear?.value || new Date().getFullYear().toString();
+      
+      const data = await getSlipData(empId, month, year);
+      if (!data || data.entries.length === 0) {
+        showToast('No data to share.', 'error');
+        return;
+      }
+      
+      const pdfDoc = await generatePayslipPDF(data);
+      const pdfBlob = pdfDoc.output('blob');
+      
+      const empName = data.emp.fullName || data.emp.name || 'Employee';
+      const fileName = `Payslip_${empName.replace(/[^a-zA-Z0-9]/g, '_')}_${month}_${year}.pdf`;
+      
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      closeShareModal();
+      showToast('Payslip downloaded for sharing.', 'success');
+    } catch (err) {
+      console.error('Share failed:', err);
+      showToast('Share failed: ' + (err.message || 'Please try preview first'), 'error');
+    } finally {
+      btnShareEmail.disabled = false;
+      btnShareEmail.textContent = 'Email';
+    }
+  });
+}
+
+if (btnShareWhatsApp) {
+  btnShareWhatsApp.addEventListener('click', async () => {
+    try {
+      showToast('WhatsApp sharing not implemented yet. Download instead.', 'info');
+      // Future: Generate PDF blob → data URL → WhatsApp web URL
+      // For now, trigger download like email
+      document.getElementById('btn-share-email').click();
+    } catch (err) {
+      showToast('Share failed.', 'error');
+    }
+  });
+}
+
+if (btnCancelShare) btnCancelShare.addEventListener('click', closeShareModal);
+if (modalCloseShare) modalCloseShare.addEventListener('click', closeShareModal);
+
+function closeShareModal() {
+  document.getElementById('share-modal')?.style?.setProperty('display', 'none');
 }
 
 // init
