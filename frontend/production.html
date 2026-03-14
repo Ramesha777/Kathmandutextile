@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Production Log | Kathmandu Textile Industry</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="production.css">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <div class="admin-wrap">
+    <!-- Header with signout -->
+    <header class="admin-header">
+      <h1>📊 Production Log</h1>
+      <button id="btnSignOut">Sign Out</button>
+    </header>
+
+    <div class="admin-body">
+      <!-- Sidebar nav (single item or tabs if multi) -->
+      <nav class="admin-sidebar">
+        <div class="sidebar-brand">
+          <span class="bl">KTT</span>
+          <span class="bn">Production Dashboard</span>
+        </div>
+        <ul class="admin-nav">
+          <li><a class="admin-nav-link active">Production Log</a></li>
+        </ul>
+        <div class="sidebar-footer">
+          <span>Manager View</span>
+        </div>
+      </nav>
+
+      <!-- Main content -->
+      <main class="admin-content">
+        <div class="admin-content-inner">
+          <div class="pl-wrap">
+            <!-- Title & Filters -->
+            <div class="pl-title-wrap">
+              <h2>Production Summary</h2>
+              <p>Track finished goods produced vs sold from approved orders. Filter by product & date range.</p>
+            </div>
+
+            <!-- Filters Row -->
+            <div class="pl-filters">
+              <div class="pl-filter-group">
+                <label>Product</label>
+                <select id="fl-item">
+                  <option value="all">All Products</option>
+                </select>
+              </div>
+              <div class="pl-filter-group">
+                <label>From Date</label>
+                <input type="date" id="fl-from">
+              </div>
+              <div class="pl-filter-group">
+                <label>To Date</label>
+                <input type="date" id="fl-to">
+              </div>
+              <button id="fl-reset" class="pl-reset-btn">Reset Filters</button>
+            </div>
+
+            <!-- Stats Cards -->
+            <div id="pl-stats">
+              <div class="pl-stat-card">
+                <div class="pl-stat-label">Total Produced</div>
+                <div class="pl-stat-value" data-stat="produced">0</div>
+                <div class="pl-stat-unit">Units</div>
+              </div>
+              <div class="pl-stat-card">
+                <div class="pl-stat-label">Total Sold</div>
+                <div class="pl-stat-value" data-stat="sold">0</div>
+                <div class="pl-stat-unit">Units</div>
+              </div>
+              <div class="pl-stat-card">
+                <div class="pl-stat-label">Products</div>
+                <div class="pl-stat-value" data-stat="types">0</div>
+                <div class="pl-stat-unit">Types</div>
+              </div>
+              <div class="pl-stat-card">
+                <div class="pl-stat-label">Sell-through</div>
+                <div class="pl-stat-value" data-stat="sellthrough">0%</div>
+                <div class="pl-stat-unit">Rate</div>
+              </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="pl-charts-grid">
+              <div class="pl-chart-card">
+                <div class="pl-chart-inner">
+                  <canvas id="barChart"></canvas>
+                </div>
+              </div>
+              <div class="pl-chart-card">
+                <div class="pl-chart-inner">
+                  <canvas id="pieChart"></canvas>
+                </div>
+              </div>
+              <div class="pl-chart-card wide">
+                <div class="pl-chart-inner">
+                  <canvas id="lineChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Products Table -->
+            <div class="pl-table-card">
+              <div class="pl-table-header">
+                <h3>Products Breakdown</h3>
+                <span id="pl-empty-msg" style="display:none; color:var(--text-muted);">No data for selected filters</span>
+              </div>
+              <div class="pl-table-scroll">
+                <table class="pl-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Produced</th>
+                      <th>Sold</th>
+                      <th>Remaining</th>
+                      <th>Sell-through</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pl-tbody"></tbody>
+                  <tfoot id="pl-tfoot"></tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="production.js"></script>
+  <script type="module" src="auth-guard.js"></script>
+</body>
+</html>
+

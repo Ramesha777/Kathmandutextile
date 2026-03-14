@@ -1,455 +1,679 @@
+// performance.js – Employee Performance Dashboard
+// Charts, rankings, and stats based on wage entries created by managers
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore,
   collection,
   getDocs,
-  query,
-  where,
-  orderBy
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const app  = initializeApp(firebaseConfig);
+const db   = getFirestore(app);
 const auth = getAuth(app);
 
-// Chart utils
-function rgba(h, a){const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return`rgba(${r},${g},${b},${a})`}
+/* ───────── Helpers ───────── */
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function q(id) { return document.getElementById(id); }
 
-const TT = {
-  backgroundColor:"rgba(11,15,30,.96)", titleColor:"#f0f4ff", bodyColor:"#94a3b8",
-  borderColor:"#f59e0b", borderWidth:1, padding:10, cornerRadius:8,
-  titleFont:{family:"'DM Sans',sans-serif",weight:"600"},
-  bodyFont:{family:"'DM Sans',sans-serif"},
-};
-const GRID="rgba(255,255,255,.06)", TM="#64748b", TS="#94a3b8", TP="#f0f4ff";
-function titleCfg(t){return{display:true,text:t,color:TP,font:{family:"'Playfair Display',serif",size:14,weight:"600"},padding:{bottom:14}}}
-function legCfg(pos="top"){return{position:pos,labels:{color:TS,font:{family:"'DM Sans',sans-serif",size:11},usePointStyle:true,pointStyleWidth:10,padding:12}}}
-
-// Colors for depts/employees
-const DEPT_COLORS = {
-  "Machine": "#38bdf8",
-  "Production": "#f59e0b", 
-  "Daily": "#10b981"
-};
-
-// Global state
+/* ───────── State ───────── */
+let empMap   = {};
 let rawWages = [];
-let empMap = {};
-let charts = {};
+let charts   = {};
+let lastAgg  = null;
 
-// Load base data once
-async function loadBaseData() {
-  try {
-    // Load all wageEntries (client-side filter for perf)
-    const wagesSnap = await getDocs(collection(db, 'wageEntries'));
-    rawWages = wagesSnap.docs.map(d => ({id: d.id, ...d.data()}));
-
-    // Load employees map
-    const empSnap = await getDocs(collection(db, 'employees'));
-    empMap = {};
-    empSnap.docs.forEach(d => {
-      const data = d.data();
-      empMap[d.id] = data.fullName || data.name || data.email || d.id;
-    });
-
-    console.log(`Loaded ${rawWages.length} wage entries, ${Object.keys(empMap).length} employees`);
-    return true;
-  } catch (err) {
-    console.error('Failed to load data:', err);
-    showEmptyState('Failed to load wage data');
-    return false;
-  }
-}
-
-// Filter raw wages by UI filters
-function getFilteredWages() {
-  let filtered = [...rawWages];
-  
-  // Date range
-  const from = document.getElementById('f-date-from')?.value;
-  const to = document.getElementById('f-date-to')?.value;
-  if (from) filtered = filtered.filter(w => w.date >= from);
-  if (to) filtered = filtered.filter(w => w.date <= to);
-
-  // Employee
-  const empId = document.getElementById('f-emp')?.value;
-  if (empId && empId !== 'all') filtered = filtered.filter(w => w.employeeId === empId);
-
-  // Dept
-  const dept = document.getElementById('f-dept')?.value;
-  if (dept && dept !== 'all') filtered = filtered.filter(w => w.department === dept);
-
-  // Product search (fuzzy)
-  const prodSearch = document.getElementById('f-prod-search')?.value?.toLowerCase().trim();
-  if (prodSearch) {
-    filtered = filtered.filter(w => 
-      (w.item || '').toLowerCase().includes(prodSearch)
-    );
-  }
-
-  return filtered;
-}
-
-// Compute all aggregates from filtered wages
-function computeAggregates(filtered) {
-  const empTotals = {};
-  const deptTotals = {};
-  const itemTotals = {};
-  const monthTotals = {};
-  let totalQty = 0, totalNet = 0, activeEmps = 0;
-
-  filtered.forEach(w => {
-    const qty = Number(w.qty) || 0;
-    const net = Number(w.net) || 0;
-    const empId = w.employeeId;
-    const empName = empMap[empId] || empId || 'Unknown';
-    const dept = w.department || 'Unknown';
-    const item = w.item || 'Misc';
-    const date = new Date(w.date);
-    const monthKey = date.toLocaleString('default', { month: 'short', year: 'numeric' });
-
-    // Emp totals
-    if (!empTotals[empId]) {
-      empTotals[empId] = { name: empName, dept, qty: 0, net: 0, items: {}, months: {} };
-      activeEmps++;
-    }
-    empTotals[empId].qty += qty;
-    empTotals[empId].net += net;
-    empTotals[empId].items[item] = (empTotals[empId].items[item] || 0) + qty;
-    empTotals[empId].months[monthKey] = (empTotals[empId].months[monthKey] || 0) + qty;
-
-    // Depts
-    deptTotals[dept] = (deptTotals[dept] || 0) + qty;
-
-    // Items (top for chart)
-    itemTotals[item] = (itemTotals[item] || 0) + qty;
-
-    // Months (for trend)
-    monthTotals[monthKey] = (monthTotals[monthKey] || 0) + qty;
-
-    totalQty += qty;
-    totalNet += net;
+/* ───────── 1. Load data from Firestore ───────── */
+async function loadData() {
+  // Load employees
+  const empSnap = await getDocs(collection(db, "employees"));
+  empMap = {};
+  empSnap.forEach(d => {
+    const data = d.data();
+    empMap[d.id] = {
+      id: d.id,
+      fullName: data.fullName || data.name || data.email || d.id,
+      department: data.department || "",
+      ...data
+    };
   });
 
-  // Sort emps by qty
-  const sortedEmps = Object.values(empTotals).sort((a,b) => b.qty - a.qty);
-  const topItems = Object.entries(itemTotals)
-    .sort(([,a],[,b]) => b - a)
-    .slice(0, 5)
-    .map(([name,qty]) => ({name, qty}));
+  // Load wage entries
+  const wageSnap = await getDocs(collection(db, "wageEntries"));
+  rawWages = [];
+  wageSnap.forEach(d => {
+    rawWages.push({ id: d.id, ...d.data() });
+  });
 
-  const months = Object.keys(monthTotals).sort().slice(-6); // Last 6 months
-  const empTrendData = sortedEmps.slice(0,6).map(emp => 
-    months.map(m => emp.months[m] || 0)
-  );
+  console.log(`📊 Loaded ${Object.keys(empMap).length} employees, ${rawWages.length} wage entries`);
+}
+
+/* ───────── 2. Populate employee filter dropdown ───────── */
+function populateFilters() {
+  const empSel = q("f-emp");
+  if (!empSel) return;
+
+  // Get unique employee IDs from wage entries
+  const empIds = [...new Set(rawWages.map(w => w.employeeId).filter(Boolean))];
+  empSel.innerHTML = '<option value="all">All Employees</option>';
+
+  empIds
+    .map(id => ({
+      id,
+      name: empMap[id]?.fullName || empMap[id]?.name || id
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(e => {
+      const opt = document.createElement("option");
+      opt.value = e.id;
+      opt.textContent = e.name;
+      empSel.appendChild(opt);
+    });
+
+  // Set default date range (last 90 days)
+  const today = new Date();
+  const prev  = new Date();
+  prev.setDate(today.getDate() - 90);
+
+  const toEl   = q("f-date-to");
+  const fromEl = q("f-date-from");
+  if (toEl && !toEl.value)     toEl.value   = today.toISOString().slice(0, 10);
+  if (fromEl && !fromEl.value) fromEl.value  = prev.toISOString().slice(0, 10);
+}
+
+/* ───────── 3. Filter wages based on current filter values ───────── */
+function getFiltered() {
+  const empId = q("f-emp")?.value  || "all";
+  const dept  = q("f-dept")?.value || "all";
+  const from  = q("f-date-from")?.value || "";
+  const to    = q("f-date-to")?.value   || "";
+  const prod  = (q("f-prod-search")?.value || "").toLowerCase().trim();
+
+  return rawWages.filter(w => {
+    // Employee filter
+    if (empId !== "all" && w.employeeId !== empId) return false;
+
+    // Department filter — check wage entry dept AND employee's dept
+    if (dept !== "all") {
+      const wDept = (w.department || "").toLowerCase();
+      const eDept = (empMap[w.employeeId]?.department || "").toLowerCase();
+      if (!wDept.includes(dept.toLowerCase()) && !eDept.includes(dept.toLowerCase())) return false;
+    }
+
+    // Date range filter
+    if (from && w.date && w.date < from) return false;
+    if (to && w.date && w.date > to) return false;
+
+    // Product/item search filter
+    if (prod) {
+      const item = (w.item || w.productName || w.fibreName || w.label || "").toLowerCase();
+      const eName = (empMap[w.employeeId]?.fullName || "").toLowerCase();
+      if (!item.includes(prod) && !eName.includes(prod)) return false;
+    }
+
+    return true;
+  });
+}
+
+/* ───────── 4. Aggregate filtered data ───────── */
+function aggregate(wages) {
+  const byEmp   = {};
+  const byDept  = {};
+  const byDeptWages = {};
+  const byProd  = {};
+  const byMonth = {};
+
+  let totalQty   = 0;
+  let totalWages = 0;
+  let activeEmps = 0;
+
+  for (const w of wages) {
+    const eid   = w.employeeId || "unknown";
+    const eName = empMap[eid]?.fullName || empMap[eid]?.name || w.employeeName || eid;
+    const eDept = w.department || empMap[eid]?.department || "Other";
+    const item  = w.item || w.productName || w.fibreName || w.label || "Unknown";
+    const qty   = Number(w.qty || w.quantity || w.meters || w.pieces || w.hours || 0);
+    const net   = Number(w.net || w.totalWage || w.wage || w.amount || 0);
+    const date  = w.date || "";
+
+    totalQty  += qty;
+    totalWages += net;
+
+    // Per employee
+    if (!byEmp[eid]) {
+      byEmp[eid] = { id: eid, name: eName, dept: eDept, qty: 0, net: 0, items: {}, months: new Set() };
+      activeEmps++;
+    }
+    byEmp[eid].qty += qty;
+    byEmp[eid].net += net;
+    byEmp[eid].items[item] = (byEmp[eid].items[item] || 0) + qty;
+    if (date) byEmp[eid].months.add(date.slice(0, 7));
+
+    // Per department
+    byDept[eDept]      = (byDept[eDept] || 0) + qty;
+    byDeptWages[eDept] = (byDeptWages[eDept] || 0) + net;
+
+    // Per product/item
+    byProd[item] = (byProd[item] || 0) + qty;
+
+    // Monthly trend (YYYY-MM key for proper sorting)
+    if (date) {
+      const mk = date.slice(0, 7);
+      if (!byMonth[mk]) byMonth[mk] = { qty: 0, net: 0 };
+      byMonth[mk].qty += qty;
+      byMonth[mk].net += net;
+    }
+  }
+
+  // Sort employees by qty desc
+  const empList = Object.values(byEmp)
+    .map(e => ({
+      ...e,
+      topItems: Object.entries(e.items)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([k, v]) => `${k} (${fmt(v)})`),
+      monthCount: e.months.size
+    }))
+    .sort((a, b) => b.qty - a.qty);
+
+  const monthKeys = Object.keys(byMonth).sort();
+
+  // Per-employee monthly data for trend chart (top 6)
+  const topEmpsForTrend = empList.slice(0, 6);
 
   return {
-    emps: sortedEmps,
-    depts: deptTotals,
-    topItems,
-    months,
-    empTrendData,
-    stats: { totalQty, totalNet, activeEmps: Math.max(1, activeEmps), avgPerEmp: activeEmps ? totalQty / activeEmps : 0 }
+    totalQty,
+    totalWages,
+    activeCount: activeEmps,
+    empList,
+    byDept,
+    byDeptWages,
+    byProd,
+    byMonth,
+    monthKeys,
+    topEmpsForTrend
   };
 }
 
-// Update stats cards
-function updateStats(stats) {
-  document.querySelector('.sc-value[style*="f59e0b"]').textContent = Math.round(stats.totalQty).toLocaleString();
-  document.querySelectorAll('.sc-value[style*="10b981"]').forEach(el => el.textContent = `Rs ${stats.totalNet.toLocaleString()}`);
-  document.querySelector('.sc-value[style*="38bdf8"]').textContent = stats.activeEmps;
-  document.querySelector('.sc-value[style*="8b5cf6"]').textContent = Math.round(stats.avgPerEmp);
-  
+/* ───────── 5. Update stat cards ───────── */
+function updateStats(agg) {
+  const el = (id, v) => { const e = q(id); if (e) e.textContent = v; };
+  el("stat-total-output", fmt(agg.totalQty));
+  el("stat-total-wages",  "Rs. " + fmt(agg.totalWages));
+  el("stat-active-count", agg.activeCount);
+  el("stat-avg-output",   agg.activeCount ? fmt(agg.totalQty / agg.activeCount) : "0");
+
   // Top badge
-  if (stats.emps.length) {
-    const leader = stats.emps[0];
-    document.getElementById('top-badge').innerHTML = `🏆 <strong style="color:#fbbf24">${leader.name}</strong> leads with <strong style="color:#fbbf24">${Math.round(leader.qty)}</strong> units`;
+  const leader = agg.empList[0];
+  const badgeName  = q("top-badge-name");
+  const badgeCount = q("top-badge-count");
+  if (badgeName)  badgeName.textContent  = leader ? leader.name : "—";
+  if (badgeCount) badgeCount.textContent = leader ? fmt(leader.qty) : "—";
+}
+
+/* ───────── 6. Chart colors & helpers ───────── */
+const COLORS = [
+  "#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899",
+  "#06b6d4","#84cc16","#f97316","#ef4444","#14b8a6",
+  "#6366f1","#d946ef","#0ea5e9","#22c55e","#eab308"
+];
+const DEPT_COLORS = { "Machine": "#38bdf8", "Production": "#f59e0b", "Daily": "#10b981" };
+
+function rgba(hex, a) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function destroyChart(key) {
+  if (charts[key]) {
+    try { charts[key].destroy(); } catch(e) {}
+    delete charts[key];
   }
 }
 
-// Charts (destroy first)
-function updateCharts(aggs) {
-  const ctxMap = {
-    topBar: 'topBar',
-    deptPie: 'deptPie', 
-    prodBar: 'prodBar',
-    trendLine: 'trendLine'
-  };
+function monthLabel(yyyymm) {
+  const [y, m] = yyyymm.split("-");
+  if (!y || !m) return yyyymm;
+  return new Date(+y, +m - 1).toLocaleString("default", { month: "short", year: "2-digit" });
+}
 
-  Object.entries(charts).forEach(([k,c]) => c?.destroy());
-  charts = {};
+/* ───────── 7. Render all charts ───────── */
+function renderCharts(agg) {
+  // Destroy all existing charts first
+  Object.keys(charts).forEach(destroyChart);
 
-  // Top bar: emps by qty (w/ pay tooltip)
-  const topCtx = document.getElementById(ctxMap.topBar);
-  if (topCtx && aggs.emps.length) {
+  /* ── A. Top Employees Horizontal Bar (by qty) ── */
+  const topCtx = q("topBar");
+  if (topCtx && agg.empList.length) {
+    const top = agg.empList.slice(0, 10);
     charts.topBar = new Chart(topCtx, {
       type: "bar",
       data: {
-        labels: aggs.emps.slice(0,10).map(e => e.name),
-        datasets: [{label:"Total Output", data: aggs.emps.slice(0,10).map(e => e.qty), 
-          backgroundColor: aggs.emps.slice(0,10).map(e => rgba(DEPT_COLORS[e.dept] || '#64748b', 0.72)),
-          borderColor: aggs.emps.slice(0,10).map(e => DEPT_COLORS[e.dept] || '#64748b'),
-          borderWidth: 1, borderRadius: 6
+        labels: top.map(e => e.name),
+        datasets: [{
+          label: "Total Output (qty)",
+          data: top.map(e => Math.round(e.qty)),
+          backgroundColor: top.map((e, i) => rgba(DEPT_COLORS[e.dept] || COLORS[i % COLORS.length], 0.75)),
+          borderColor: top.map((e, i) => DEPT_COLORS[e.dept] || COLORS[i % COLORS.length]),
+          borderWidth: 1,
+          borderRadius: 6,
+          barPercentage: 0.7
         }]
       },
       options: {
-        indexAxis: "y", responsive: true, maintainAspectRatio: false,
-        plugins: { legend: {display: false}, title: titleCfg("Top Employee Output"),
-          tooltip: {...TT, callbacks: {
-            afterLabel: ctx => `Wages: Rs ${(aggs.emps[ctx.dataIndex]?.net || 0).toLocaleString()}`
-          }}
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: { display: true, text: "Top Employees by Work Output (Qty)", font: { size: 14, weight: "bold" } },
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => `Output: ${fmt(ctx.raw)} units`,
+              afterLabel: ctx => `Wages: Rs ${fmt(top[ctx.dataIndex]?.net || 0)}`
+            }
+          }
         },
         scales: {
-          x: {ticks:{color:TM,font:{size:11}},grid:{color:GRID},beginAtZero:true,title:{display:true,text:"Quantity",color:TM,font:{size:11}}},
-          y: {ticks:{color:TS,font:{size:11}},grid:{color:"transparent"}}
+          x: { beginAtZero: true, ticks: { callback: v => fmt(v) }, grid: { color: "rgba(0,0,0,0.05)" } },
+          y: { grid: { display: false }, ticks: { font: { size: 11 } } }
         }
       }
     });
   }
 
-  // Dept pie
-  const pieCtx = document.getElementById(ctxMap.deptPie);
-  if (pieCtx) {
-    const labels = Object.keys(aggs.depts);
-    const data = Object.values(aggs.depts);
+  /* ── B. Department Doughnut ── */
+  const pieCtx = q("deptPie");
+  if (pieCtx && Object.keys(agg.byDept).length) {
+    const labels = Object.keys(agg.byDept);
+    const data   = Object.values(agg.byDept);
+    const total  = data.reduce((s, v) => s + v, 0);
+
     charts.deptPie = new Chart(pieCtx, {
       type: "doughnut",
-      data: { labels, datasets: [{data, backgroundColor: labels.map(l => rgba(DEPT_COLORS[l] || '#94a3b8', 0.75)),
-        borderColor: labels.map(l => DEPT_COLORS[l] || '#94a3b8'), borderWidth: 2 }] },
-      options: {responsive: true, maintainAspectRatio: false, cutout: "62%",
-        plugins: {legend: legCfg("right"), title: titleCfg("Output by Department"), tooltip: TT} }
+      data: {
+        labels,
+        datasets: [{
+          data: data.map(v => Math.round(v)),
+          backgroundColor: labels.map(l => rgba(DEPT_COLORS[l] || "#94a3b8", 0.75)),
+          borderColor: labels.map(l => DEPT_COLORS[l] || "#94a3b8"),
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "60%",
+        plugins: {
+          title: { display: true, text: "Output Share by Department", font: { size: 14, weight: "bold" } },
+          legend: { position: "bottom", labels: { padding: 12, usePointStyle: true } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const pct = total ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+                return `${ctx.label}: ${fmt(ctx.raw)} units (${pct}%)`;
+              }
+            }
+          }
+        }
+      }
     });
   }
 
-  // Prod bar (top items)
-  const prodCtx = document.getElementById(ctxMap.prodBar);
-  if (prodCtx && aggs.topItems.length) {
+  /* ── C. Department Bar (Qty vs Wages dual axis) ── */
+  const deptBarCtx = q("deptBar");
+  if (deptBarCtx && Object.keys(agg.byDept).length) {
+    const deptLabels = Object.keys(agg.byDept);
+    charts.deptBar = new Chart(deptBarCtx, {
+      type: "bar",
+      data: {
+        labels: deptLabels,
+        datasets: [
+          {
+            label: "Total Qty",
+            data: deptLabels.map(d => Math.round(agg.byDept[d] || 0)),
+            backgroundColor: deptLabels.map(l => rgba(DEPT_COLORS[l] || "#94a3b8", 0.8)),
+            borderColor: deptLabels.map(l => DEPT_COLORS[l] || "#94a3b8"),
+            borderWidth: 1,
+            borderRadius: 6,
+            yAxisID: "y"
+          },
+          {
+            label: "Total Wages (Rs)",
+            data: deptLabels.map(d => Math.round(agg.byDeptWages[d] || 0)),
+            backgroundColor: deptLabels.map(l => rgba(DEPT_COLORS[l] || "#94a3b8", 0.3)),
+            borderColor: deptLabels.map(l => DEPT_COLORS[l] || "#94a3b8"),
+            borderWidth: 1,
+            borderRadius: 6,
+            yAxisID: "y1"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          title: { display: true, text: "Department Output (Qty) vs Wages", font: { size: 14, weight: "bold" } },
+          legend: { position: "top" },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y:  { position: "left",  beginAtZero: true, title: { display: true, text: "Quantity" },  ticks: { callback: v => fmt(v) }, grid: { color: "rgba(0,0,0,0.05)" } },
+          y1: { position: "right", beginAtZero: true, title: { display: true, text: "Wages (Rs)" }, ticks: { callback: v => fmt(v) }, grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+  }
+
+  /* ── D. Product/Item Bar (stacked by employee) ── */
+  const prodCtx = q("prodBar");
+  if (prodCtx && Object.keys(agg.byProd).length) {
+    const topItems = Object.entries(agg.byProd)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 12)
+      .map(([name]) => name);
+
+    const topEmps = agg.empList.slice(0, 6);
+
     charts.prodBar = new Chart(prodCtx, {
       type: "bar",
       data: {
-        labels: aggs.topItems.map(i => i.name),
-        datasets: aggs.emps.slice(0,6).map((emp, idx) => ({
+        labels: topItems,
+        datasets: topEmps.map((emp, idx) => ({
           label: emp.name,
-          data: aggs.topItems.map(i => emp.items[i.name] || 0),
-          backgroundColor: rgba(DEPT_COLORS[emp.dept] || '#94a3b8', 0.7),
-          borderColor: DEPT_COLORS[emp.dept] || '#94a3b8'
+          data: topItems.map(item => Math.round(emp.items[item] || 0)),
+          backgroundColor: rgba(COLORS[idx % COLORS.length], 0.7),
+          borderColor: COLORS[idx % COLORS.length],
+          borderWidth: 1,
+          borderRadius: 4
         }))
       },
-      options: {responsive: true, maintainAspectRatio: false, interaction: {mode:"index",intersect:false},
-        plugins: {legend: legCfg("top"), title: titleCfg("Top Products by Employee"), tooltip: TT},
-        scales: {x: {ticks:{color:TM,font:{size:11}},grid:{color:GRID}},
-          y: {ticks:{color:TM,font:{size:11}},grid:{color:GRID},beginAtZero:true,title:{display:true,text:"Quantity",color:TM,font:{size:11}}}} }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          title: { display: true, text: "Top Products/Items — Employee Breakdown (by Qty)", font: { size: 14, weight: "bold" } },
+          legend: { position: "top", labels: { usePointStyle: true, padding: 10, font: { size: 10 } } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmt(ctx.raw)} units` } }
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 40, font: { size: 10 } } },
+          y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmt(v) }, grid: { color: "rgba(0,0,0,0.05)" }, title: { display: true, text: "Quantity" } }
+        }
+      }
     });
   }
 
-  // Trend line
-  const trendCtx = document.getElementById(ctxMap.trendLine);
-  if (trendCtx && aggs.months.length) {
+  /* ── E. Monthly Trend Line (per employee) ── */
+  const trendCtx = q("trendLine");
+  if (trendCtx && agg.monthKeys.length) {
+    const topEmps = agg.topEmpsForTrend;
     charts.trendLine = new Chart(trendCtx, {
       type: "line",
       data: {
-        labels: aggs.months,
-        datasets: aggs.emps.slice(0,6).map((emp, idx) => ({
-          label: emp.name,
-          data: aggs.empTrendData[idx] || aggs.months.map(() => 0),
-          borderColor: DEPT_COLORS[emp.dept] || '#94a3b8',
-          backgroundColor: rgba(DEPT_COLORS[emp.dept] || '#94a3b8', 0.07),
-          pointBackgroundColor: DEPT_COLORS[emp.dept] || '#94a3b8',
-          pointRadius: 4, pointHoverRadius: 6, borderWidth: 2.5, fill: false, tension: 0.4
-        }))
+        labels: agg.monthKeys.map(monthLabel),
+        datasets: [
+          // Total output line
+          {
+            label: "Total Output",
+            data: agg.monthKeys.map(k => Math.round(agg.byMonth[k].qty)),
+            borderColor: "#94a3b8",
+            backgroundColor: "rgba(148,163,184,0.08)",
+            borderWidth: 3,
+            borderDash: [6, 3],
+            fill: true,
+            tension: 0.4,
+            pointRadius: 5,
+            pointBackgroundColor: "#94a3b8",
+            order: 10
+          },
+          // Per-employee lines
+          ...topEmps.map((emp, idx) => ({
+            label: emp.name,
+            data: agg.monthKeys.map(mk => {
+              // Find this employee's qty for this month
+              const monthQty = rawWages
+                .filter(w => w.employeeId === emp.id && w.date && w.date.slice(0, 7) === mk)
+                .reduce((s, w) => s + Number(w.qty || w.quantity || 0), 0);
+              return Math.round(monthQty);
+            }),
+            borderColor: COLORS[idx % COLORS.length],
+            backgroundColor: rgba(COLORS[idx % COLORS.length], 0.05),
+            pointBackgroundColor: COLORS[idx % COLORS.length],
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            borderWidth: 2,
+            fill: false,
+            tension: 0.4
+          }))
+        ]
       },
-      options: {responsive: true, maintainAspectRatio: false, interaction: {mode:"index",intersect:false},
-        plugins: {legend: legCfg("top"), title: titleCfg("Monthly Output Trend"), tooltip: TT},
-        scales: {x: {ticks:{color:TM,font:{size:11}},grid:{color:GRID}},
-          y: {ticks:{color:TM,font:{size:11}},grid:{color:GRID},beginAtZero:true,title:{display:true,text:"Quantity",color:TM,font:{size:11}}}} }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          title: { display: true, text: "Monthly Output Trend by Employee", font: { size: 14, weight: "bold" } },
+          legend: { position: "top", labels: { usePointStyle: true, padding: 10, font: { size: 10 } } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmt(ctx.raw)} units` } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+          y: { beginAtZero: true, ticks: { callback: v => fmt(v) }, grid: { color: "rgba(0,0,0,0.05)" }, title: { display: true, text: "Quantity" } }
+        }
+      }
     });
   }
 }
 
-// Leaderboard & table
-function updateLeaderboardTable(aggs) {
-  const lbEl = document.getElementById("leaderboard");
-  const tbody = document.getElementById("detail-body");
-  const medals = ["🥇","🥈","🥉"];
+/* ───────── 8. Leaderboard ───────── */
+function renderLeaderboard(empList) {
+  const el = q("leaderboard");
+  if (!el) return;
 
-  // Leaderboard
-  if (lbEl && aggs.emps.length) {
-    const html = aggs.emps.slice(0,10).map((emp, i) => {
-      const maxQty = aggs.emps[0].qty;
-      const pct = maxQty ? (emp.qty / maxQty * 100).toFixed(1) : 0;
-      const col = i===0 ? "#f59e0b" : i===1 ? "#94a3b8" : i===2 ? "#fb923c" : "#38bdf8";
-      const topItems = Object.entries(emp.items).sort(([,a],[,b])=>b-a).slice(0,3).map(([n])=>n).join(", ");
-      return `<div class="lb-row">
-        <div class="lb-rank" style="color:${col}">${medals[i]||`#${i+1}`}</div>
-        <div class="lb-info">
-          <div class="lb-name">${emp.name}</div>
-          <div class="lb-meta">${emp.dept} · ${topItems}</div>
-          <div class="lb-bar-wrap"><div class="lb-bar" style="width:${pct}%;background:${col}"></div></div>
-        </div>
-        <div class="lb-right">
-          <div class="lb-qty" style="color:${col}">${Math.round(emp.qty).toLocaleString()}</div>
-          <div class="lb-pay">Rs ${Math.round(emp.net).toLocaleString()}</div>
-        </div>
-      </div>`;
-    }).join("");
-    lbEl.innerHTML = html;
-  }
-
-  // Detail table (top 50 rows)
-  if (tbody && aggs.emps.length) {
-    // Flatten emp-item rows
-    const rows = [];
-    aggs.emps.slice(0,20).forEach(emp => {
-      Object.entries(emp.items).forEach(([item, qty]) => {
-        rows.push({name: emp.name, dept: emp.dept, item, qty, rate: 0, months: Object.keys(emp.months).length });
-      });
-    });
-    rows.sort((a,b) => b.qty - a.qty);
-    tbody.innerHTML = rows.slice(0,50).map(r => 
-      `<tr>
-        <td>${r.name}</td>
-        <td><span class="badge" style="background:${rgba(DEPT_COLORS[r.dept] || '#94a3b8', 0.12)};color:${DEPT_COLORS[r.dept] || '#94a3b8'}">${r.dept}</span></td>
-        <td>${r.item}</td>
-        <td><strong style="color:#fbbf24">${Math.round(r.qty).toLocaleString()}</strong></td>
-        <td>—</td>
-        <td>—</td>
-        <td>${r.months}</td>
-      </tr>`
-    ).join("");
-  }
-}
-
-// Show empty/error state
-function showEmptyState(msg = 'No wage data yet') {
-  document.querySelector('.stats').innerHTML = `<div style="grid-column:1/-1; padding:2rem; text-align:center; color:#94a3b8;">${msg}</div>`;
-  ['topBar','deptPie','prodBar','trendLine'].forEach(id => {
-    const ctx = document.getElementById(id);
-    if (ctx) ctx.parentElement.innerHTML = `<div style="padding:2rem; text-align:center; color:#94a3b8;">No data</div>`;
-  });
-  document.getElementById("leaderboard")?.remove();
-  document.getElementById("detail-body")?.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8;">No data</td></tr>';
-}
-
-// Main refresh
-async function refreshAll() {
-  const filteredWages = getFilteredWages();
-  if (!filteredWages.length) {
-    showEmptyState('No matching data for selected filters');
+  if (!empList.length) {
+    el.innerHTML = '<p style="padding:1.5rem;text-align:center;color:#94a3b8;">No employee data for selected filters.</p>';
     return;
   }
 
-  const aggs = computeAggregates(filteredWages);
-  updateStats(aggs);
-  updateCharts(aggs);
-  updateLeaderboardTable(aggs);
+  const medals = ["🥇", "🥈", "🥉"];
+  const maxQty = empList[0].qty || 1;
+
+  let html = `<div class="lb-table">
+    <div class="lb-hdr">
+      <span>#</span><span>Employee</span><span>Department</span><span>Top Items</span><span>Total Qty</span><span>Total Wages</span>
+    </div>`;
+
+  empList.forEach((e, i) => {
+    const pct = (e.qty / maxQty * 100).toFixed(1);
+    const col = i === 0 ? "#f59e0b" : i === 1 ? "#94a3b8" : i === 2 ? "#fb923c" : "#38bdf8";
+    html += `<div class="lb-row ${i < 3 ? 'lb-top3' : ''}">
+      <span class="lb-rank" style="color:${col}">${medals[i] || '#' + (i + 1)}</span>
+      <span class="lb-name">${escapeHtml(e.name)}</span>
+      <span class="lb-dept">${escapeHtml(e.dept)}</span>
+      <span class="lb-items">${e.topItems.map(t => escapeHtml(t)).join(", ") || "—"}</span>
+      <span class="lb-qty" style="color:${col}">${fmt(e.qty)}</span>
+      <span class="lb-wage">Rs. ${fmt(e.net)}</span>
+    </div>`;
+  });
+
+  html += `</div>`;
+  el.innerHTML = html;
 }
 
-// Filter listeners
+/* ───────── 9. Detail table ───────── */
+function renderDetailTable(empList) {
+  const tbody = q("detail-body");
+  if (!tbody) return;
+
+  if (!empList.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:1.5rem;">No data for selected filters.</td></tr>';
+    return;
+  }
+
+  const rows = [];
+  empList.forEach((emp, rank) => {
+    Object.entries(emp.items)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([item, qty]) => {
+        rows.push({ rank, name: emp.name, dept: emp.dept, item, qty, net: emp.net, totalQty: emp.qty, monthCount: emp.monthCount });
+      });
+  });
+
+  rows.sort((a, b) => b.qty - a.qty);
+
+  tbody.innerHTML = rows.slice(0, 50).map(r => {
+    const ratePerUnit = r.totalQty > 0 ? (r.net / r.totalQty).toFixed(2) : "—";
+    const deptCol = DEPT_COLORS[r.dept] || "#94a3b8";
+    return `<tr class="${r.rank < 3 ? 'detail-top3' : ''}">
+      <td><strong>${escapeHtml(r.name)}</strong></td>
+      <td><span style="background:${rgba(deptCol, 0.12)};color:${deptCol};padding:2px 8px;border-radius:4px;font-size:0.8rem;">${escapeHtml(r.dept)}</span></td>
+      <td>${escapeHtml(r.item)}</td>
+      <td><strong style="color:#f59e0b">${fmt(r.qty)}</strong></td>
+      <td>Rs. ${fmt(r.net)}</td>
+      <td>${ratePerUnit}</td>
+      <td>${r.monthCount || 1}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* ───────── 10. CSV Export ───────── */
+function exportCSV(empList) {
+  if (!empList || !empList.length) return alert("No data to export.");
+
+  let csv = "Rank,Employee,Department,Total Qty,Total Wages,Rate/Unit,Months Active,Top Items\n";
+  empList.forEach((e, i) => {
+    const items = e.topItems.join("; ").replace(/"/g, '""');
+    const rate  = e.qty > 0 ? (e.net / e.qty).toFixed(2) : "0";
+    csv += `${i + 1},"${e.name.replace(/"/g, '""')}","${e.dept.replace(/"/g, '""')}",${Math.round(e.qty)},${Math.round(e.net)},${rate},${e.monthCount || 1},"${items}"\n`;
+  });
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `performance_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ───────── 11. Master refresh ───────── */
+function refresh() {
+  const filtered = getFiltered();
+
+  if (!filtered.length) {
+    // Show empty state without destroying DOM
+    const el = (id, v) => { const e = q(id); if (e) e.textContent = v; };
+    el("stat-total-output", "0");
+    el("stat-total-wages",  "Rs. 0");
+    el("stat-active-count", "0");
+    el("stat-avg-output",   "0");
+    const bn = q("top-badge-name");  if (bn) bn.textContent = "—";
+    const bc = q("top-badge-count"); if (bc) bc.textContent = "—";
+
+    // Destroy charts
+    Object.keys(charts).forEach(destroyChart);
+    renderLeaderboard([]);
+    renderDetailTable([]);
+    return;
+  }
+
+  const agg = aggregate(filtered);
+  lastAgg = agg;
+
+  console.log(`📊 Filtered: ${filtered.length} entries → ${agg.activeCount} employees, ${fmt(agg.totalQty)} total qty, ${Object.keys(agg.byDept).length} depts`);
+
+  updateStats(agg);
+  renderCharts(agg);
+  renderLeaderboard(agg.empList);
+  renderDetailTable(agg.empList);
+}
+
+/* ───────── 12. Wire up filter listeners ───────── */
 function setupFilters() {
-  const filters = ['f-emp','f-dept','f-prod-search','f-date-from','f-date-to'];
-  filters.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('change', refreshAll);
+  // Dropdown & date filters — refresh on change
+  ["f-emp", "f-dept", "f-date-from", "f-date-to"].forEach(id => {
+    const el = q(id);
+    if (el) el.addEventListener("change", refresh);
   });
-  // Product search input
-  const prodEl = document.getElementById('f-prod-search');
-  if (prodEl) prodEl.addEventListener('input', refreshAll);
 
-  // Reset btn
-  const resetBtn = document.querySelector('.rbtn');
-  if (resetBtn) resetBtn.addEventListener('click', () => {
-    ['f-emp','f-dept','f-prod-search','f-date-from','f-date-to'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        if (el.tagName === 'SELECT') el.value = 'all';
-        else if (el.type === 'date') el.value = '';
-        else el.value = '';
+  // Product search — debounced refresh on input
+  const prodEl = q("f-prod-search");
+  if (prodEl) {
+    let timer;
+    prodEl.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 300);
+    });
+  }
+
+  // Reset button — clear all filters & refresh
+  const resetBtn = q("resetBtn");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      const empSel  = q("f-emp");
+      const deptSel = q("f-dept");
+      const fromEl  = q("f-date-from");
+      const toEl    = q("f-date-to");
+      const prodEl  = q("f-prod-search");
+
+      if (empSel)  empSel.value  = "all";
+      if (deptSel) deptSel.value = "all";
+      if (fromEl)  fromEl.value  = "";
+      if (toEl)    toEl.value    = "";
+      if (prodEl)  prodEl.value  = "";
+
+      refresh();
+    });
+  }
+
+  // Export CSV button
+  const exportBtn = q("exportBtn");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", () => {
+      if (lastAgg && lastAgg.empList.length) {
+        exportCSV(lastAgg.empList);
+      } else {
+        alert("No data to export. Try adjusting your filters.");
       }
     });
-    refreshAll();
-  });
-}
-
-// Init filters (employees/products datalists) - unchanged
-async function loadEmployeesForFilter() {
-  const sel = document.getElementById("f-emp");
-  if (!sel) return;
-  sel.innerHTML = `<option value="all">All Employees</option>`;
-  try {
-    const snap = await getDocs(collection(db, "employees"));
-    const emps = snap.docs.map((d) => {
-      const data = d.data() || {};
-      return {
-        id: d.id,
-        name: (data.fullName || data.name || data.email || d.id || "").trim()
-      };
-    }).filter(e => e.name);
-    emps.sort((a, b) => a.name.localeCompare(b.name));
-    emps.forEach(e => {
-      const opt = document.createElement("option");
-      opt.value = e.id;
-      opt.textContent = e.name;
-      sel.appendChild(opt);
-    });
-  } catch (err) {
-    console.error("Failed to load employees for performance filter:", err);
   }
 }
 
-async function loadProductsForFilter() {
-  const input = document.getElementById("f-prod-search");
-  if (!input) return;
-  const names = new Set();
-  try {
-    const ratesSnap = await getDocs(collection(db, "rates_productions"));
-    ratesSnap.forEach((d) => {
-      const data = d.data() || {};
-      const name = (data.name || data.productName || "").trim();
-      if (name) names.add(name);
-    });
-    const invSnap = await getDocs(collection(db, "inventory"));
-    invSnap.forEach((d) => {
-      const data = d.data() || {};
-      const cat = String(data.category || "").toLowerCase();
-      if (cat.includes("finished")) {
-        const name = (data.name || "").trim();
-        if (name) names.add(name);
-      }
-    });
-    const listId = "perf-product-list";
-    let dl = document.getElementById(listId);
-    if (!dl) {
-      dl = document.createElement("datalist");
-      dl.id = listId;
-      document.body.appendChild(dl);
-    }
-    const sorted = Array.from(names).sort((a, b) => a.localeCompare(b));
-    dl.innerHTML = sorted.map(n => `<option value="${n}"></option>`).join("");
-    input.setAttribute("list", listId);
-  } catch (err) {
-    console.error("Failed to load products for performance filter:", err);
-  }
-}
-
-// Main init
+/* ───────── 13. Init ───────── */
 async function init() {
-  if (!(await loadBaseData())) return;
-  
-  await Promise.all([loadEmployeesForFilter(), loadProductsForFilter()]);
-  setupFilters();
-  refreshAll();
+  try {
+    // Show loading state
+    document.querySelectorAll(".sc-value").forEach(el => el.textContent = "Loading…");
+
+    await loadData();
+    populateFilters();
+    setupFilters();
+    refresh();
+
+    console.log("✅ Performance dashboard initialized");
+  } catch (err) {
+    console.error("💥 Performance init failed:", err);
+    document.querySelectorAll(".sc-value").forEach(el => el.textContent = "Error");
+
+    const lb = q("leaderboard");
+    if (lb) lb.innerHTML = `<p style="padding:1.5rem;text-align:center;color:#ef4444;">Failed to load: ${escapeHtml(err.message || String(err))}</p>`;
+  }
 }
 
-// Load when ready
-if (window.location.hash === '#embed') {
-  document.body.classList.add('embed-mode');
-  document.querySelector('.wrap')?.remove();
-  const mainContent = document.querySelector('.content .inner, main .inner') || document.querySelector('main') || document.body;
-  mainContent.style.height = '100vh';
-}
-
+// Run init when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
 } else {
