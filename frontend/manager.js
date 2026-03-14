@@ -58,10 +58,19 @@ const btnCancelShare = document.getElementById('btn-cancel-share');
 const modalCloseShare = document.getElementById('modal-close-share');
 const managerInventoryListEl = document.getElementById('managerInventoryList');
 const managerInventoryCategoryFilterEl = document.getElementById('managerInventoryCategoryFilter');
+const btnInventoryExportCsv = document.getElementById('btn-inventory-export-csv');
 const managerDamageReportsListEl = document.getElementById('managerDamageReportsList');
 const managerOrdersListEl = document.getElementById('managerOrdersList');
 const orderSearchQueryEl = document.getElementById('orderSearchQuery');
 const orderStatusFilterEl = document.getElementById('orderStatusFilter');
+const btnOrdersExportCsv = document.getElementById('btn-orders-export-csv');
+const wageSearchInput = document.getElementById('wage-search');
+const wageDateFrom = document.getElementById('wage-date-from');
+const wageDateTo = document.getElementById('wage-date-to');
+const btnWageFilter = document.getElementById('btn-wage-filter');
+const btnWageExportCsv = document.getElementById('btn-wage-export-csv');
+
+let allWageEntries = [];
 
 let deleteDamageId = null;
 const deleteDamageModal = document.getElementById('delete-damage-modal');
@@ -85,6 +94,8 @@ const btnCancelInventoryDelete = document.getElementById('btn-cancel-inventory-d
 const modalCloseInventoryDelete = document.getElementById('modal-close-inventory-delete');
 
 let managerInventoryItems = [];
+let managerOrdersAll = [];
+let managerOrdersRatesMap = {};
 let managerUserNameByUid = {};
 
 // Employee search elements
@@ -587,6 +598,46 @@ function renderManagerInventory() {
   });
 }
 
+function getFilteredInventoryItems() {
+  const cat = managerInventoryCategoryFilterEl?.value || '';
+  return cat ? managerInventoryItems.filter(x => String(x.category || '').trim() === cat) : managerInventoryItems;
+}
+
+function exportInventoryCSV() {
+  const items = getFilteredInventoryItems();
+  if (!items.length) {
+    showToast('No inventory items to export.', 'error');
+    return;
+  }
+  const headers = ['Barcode/ID', 'Name', 'Category', 'Qty', 'Unit', 'Vendor', 'Storage'];
+  const rows = items.map(x => [
+    x.barcode || '',
+    x.name || '',
+    x.category || '',
+    x.quantity != null ? x.quantity : '',
+    x.unit || x.units || '',
+    x.vendorName || '',
+    x.storageArea || ''
+  ]);
+  const esc = v => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `inventory_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('CSV exported successfully.', 'success');
+}
+
+if (btnInventoryExportCsv) btnInventoryExportCsv.addEventListener('click', exportInventoryCSV);
+
 // Load manager damage reports (problem_reports)
 async function loadManagerDamageReports() {
   if (!managerDamageReportsListEl) return;
@@ -651,8 +702,9 @@ async function loadManagerOrders() {
   managerOrdersListEl.innerHTML = '<p class="loading-msg">Loading orders…</p>';
   try {
     const snap = await getDocs(collection(db, 'orders'));
-    let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    items.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+    managerOrdersAll = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    managerOrdersAll.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+    let items = [...managerOrdersAll];
 
     // Load selling rates for price display
     const ratesSnap = await getDocs(collection(db, 'rates_selling'));
@@ -670,6 +722,7 @@ async function loadManagerOrders() {
         if (!ratesMap[keyNameOnly]) ratesMap[keyNameOnly] = Number(r.sellingPrice ?? r.rate ?? 0);
       }
     });
+    managerOrdersRatesMap = ratesMap;
 
     const search = (orderSearchQueryEl?.value || '').toLowerCase().trim();
     const statusFilter = orderStatusFilterEl?.value || '';
@@ -808,6 +861,80 @@ async function loadManagerOrders() {
   }
 }
 
+function getFilteredManagerOrders() {
+  let items = [...managerOrdersAll];
+  const search = (orderSearchQueryEl?.value || '').toLowerCase().trim();
+  const statusFilter = orderStatusFilterEl?.value || '';
+  if (search) {
+    items = items.filter(o =>
+      (String(o.supplierContact || '')).toLowerCase().includes(search) ||
+      (String(o.supplierName || '')).toLowerCase().includes(search) ||
+      (String(o.productName || '')).toLowerCase().includes(search)
+    );
+  }
+  if (statusFilter) {
+    items = items.filter(o => (String(o.status || '')).toLowerCase() === statusFilter.toLowerCase());
+  }
+  return items;
+}
+
+function exportOrdersCSV() {
+  const items = getFilteredManagerOrders();
+  if (!items.length) {
+    showToast('No orders to export.', 'error');
+    return;
+  }
+  const ratesMap = managerOrdersRatesMap || {};
+  const headers = ['Products', 'Supplier', 'Contact', 'Address', 'Delivery', 'Est. Total', 'Notes', 'Status'];
+  const rows = items.map(o => {
+    let productsArray = [];
+    if (Array.isArray(o.products) && o.products.length > 0) {
+      productsArray = o.products;
+    } else if (o.productName) {
+      productsArray = [{ productName: o.productName, quantity: o.quantity, unit: o.unit }];
+    }
+    const productSummary = productsArray.map(p => `${p.productName || '—'} (×${p.quantity ?? '?'})`).join('; ');
+    let orderTotal = 0;
+    for (const p of productsArray) {
+      const name = p.productName || p.name || '—';
+      const unit = p.unit || '—';
+      const qty = Number(p.quantity) || 0;
+      const keyFull = normalizeForMatch(name) + '||' + normalizeForMatch(unit);
+      const keyName = normalizeForMatch(name);
+      const rate = ratesMap[keyFull] ?? ratesMap[keyName] ?? 0;
+      orderTotal += qty * rate;
+    }
+    const totalStr = orderTotal > 0 ? orderTotal.toFixed(2) : '';
+    return [
+      productSummary,
+      o.supplierName || '',
+      o.supplierContact || '',
+      o.supplierAddress || o.deliveryAddress || '',
+      o.deliveryDate || '',
+      totalStr,
+      o.notes || '',
+      (o.status || 'pending').toLowerCase()
+    ];
+  });
+  const esc = v => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `orders_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('CSV exported successfully.', 'success');
+}
+
+if (btnOrdersExportCsv) btnOrdersExportCsv.addEventListener('click', exportOrdersCSV);
+
 async function updateOrderStatus(orderId, status) {
   try {
     await updateDoc(doc(db, 'orders', orderId), { status, updatedAt: serverTimestamp() });
@@ -934,7 +1061,7 @@ async function getInvoiceData(orderId, opts = {}) {
     const rate = ratesMap[normalizeForMatch(name) + '||' + normalizeForMatch(unit)] ?? ratesMap[normalizeForMatch(name)] ?? 0;
     const lineTotal = qty * rate;
     subtotal += lineTotal;
-    lines.push({ productName: name, barcode: p.productBarcode || '—', quantity: qty, unit, rate, lineTotal });
+    lines.push({ productName: name, quantity: qty, unit, rate, lineTotal });
   }
   const discountPercent = opts.discountPercent || 0;
   const vatPercent = opts.vatPercent || 0;
@@ -955,7 +1082,7 @@ function renderInvoicePreviewHtml(data) {
   const companyInfo = window.COMPANY || { name: 'Kathmandu Textile', address: 'Kathmandu', phone: 'N/A', email: 'N/A', panVat: '' };
   const { order, lines, subtotal, discountAmount, vatAmount, grandTotal, invoiceNo, invoiceDate, opts } = data;
   const sig = opts?.sig || 'Authorised';
-  const rows = lines.map(l => `<tr><td>${escapeHtml(l.productName)}</td><td>${escapeHtml(l.barcode)}</td><td>${l.quantity}</td><td>${escapeHtml(l.unit)}</td><td>Rs. ${Number(l.rate).toFixed(2)}</td><td>Rs. ${Number(l.lineTotal).toFixed(2)}</td></tr>`).join('');
+  const rows = lines.map(l => `<tr><td>${escapeHtml(l.productName)}</td><td>${l.quantity}</td><td>${escapeHtml(l.unit)}</td><td>Rs. ${Number(l.rate).toFixed(2)}</td><td>Rs. ${Number(l.lineTotal).toFixed(2)}</td></tr>`).join('');
   let extraRows = '';
   if (discountAmount > 0) extraRows += `<tr><td colspan="5" style="text-align:right;color:#94a3b8;">Discount (${opts.discountPercent || 0}%)</td><td>Rs. -${Number(discountAmount).toFixed(2)}</td></tr>`;
   if (vatAmount > 0) extraRows += `<tr><td colspan="5" style="text-align:right;color:#94a3b8;">VAT (${opts.vatPercent || 0}%)</td><td>Rs. ${Number(vatAmount).toFixed(2)}</td></tr>`;
@@ -966,11 +1093,15 @@ function renderInvoicePreviewHtml(data) {
     </div>
     <div style="margin-bottom:1rem;"><div style="font-size:0.9rem;font-weight:600;color:#f0f4ff;">Supplier: ${escapeHtml(order.supplierName || '—')}</div><div style="font-size:0.8rem;color:#94a3b8;">Contact: ${escapeHtml(order.supplierContact || '—')} | Delivery: ${escapeHtml(order.deliveryAddress || order.supplierAddress || '—')}</div></div>
     <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-      <thead><tr style="background:rgba(245,158,11,0.15);color:#fbbf24;"><th style="padding:8px;text-align:left;">Product</th><th>Barcode</th><th>Qty</th><th>Unit</th><th style="text-align:right;">Rate</th><th style="text-align:right;">Amount</th></tr></thead>
-      <tbody style="color:#e2e8f0;">${rows}${extraRows}</tbody>
+      <thead><tr style="background:rgba(245,158,11,0.15);color:#fbbf24;"><th style="padding:8px;text-align:left;">Product</th><th>Qty</th><th>Unit</th><th style="text-align:right;">Rate</th><th style="text-align:right;">Amount</th></tr></thead>
+      <tbody style="color:#e2e8f0;">${rows.replace(/<td>.*?<\/td><td>/, '<td>').replace(/<\/td><td>.*?<\/td>/, '</td><td>')}${extraRows}</tbody>
     </table>
     <div style="margin-top:1rem;text-align:right;"><div style="font-size:0.85rem;color:#94a3b8;">Subtotal: Rs. ${Number(subtotal).toFixed(2)}</div>${discountAmount > 0 ? `<div>Discount: Rs. -${Number(discountAmount).toFixed(2)}</div>` : ''}${vatAmount > 0 ? `<div>VAT: Rs. ${Number(vatAmount).toFixed(2)}</div>` : ''}<div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">Grand Total: Rs. ${Number(grandTotal).toFixed(2)}</div></div>
-    <div style="margin-top:1rem;"><div style="font-size:0.7rem;color:#64748b;">Authorised Signature</div><div style="font-family:cursive;">${escapeHtml(sig)}</div></div>
+    <div style="margin-top:1rem;">
+      <div style="font-family:cursive;font-size:0.9rem;margin-bottom:8px;">${escapeHtml(sig)}</div>
+      <div style="border-bottom:1px solid #94a3b8;width:160px;margin:0 auto 6px;"></div>
+      <div style="font-size:0.7rem;color:#64748b;text-align:center;">Authorised Signature</div>
+    </div>
   </div>`;
 }
 
@@ -1063,27 +1194,27 @@ async function generateOrderInvoicePDF(data) {
   pdfDoc.text(`Supplier: ${order.supplierName || '—'}`, 14, y); y += 5;
   pdfDoc.text(`Contact: ${order.supplierContact || '—'}`, 14, y); y += 5;
   pdfDoc.text(`Delivery: ${order.deliveryAddress || order.supplierAddress || '—'}`, 14, y); y += 1;
-  const tableBody = data.lines.map(l => [l.productName, l.barcode, String(l.quantity), l.unit, `Rs. ${Number(l.rate).toFixed(2)}`, `Rs. ${Number(l.lineTotal).toFixed(2)}`]);
+  const tableBody = data.lines.map(l => [l.productName, String(l.quantity), l.unit, `Rs. ${Number(l.rate).toFixed(2)}`, `Rs. ${Number(l.lineTotal).toFixed(2)}`]);
   if (tableBody.length === 0) tableBody.push(['—', '—', '—', '—', '0.00', '0.00']);
-  pdfDoc.autoTable({ startY: y, head: [['Product', 'Barcode', 'Qty', 'Unit', 'Rate (Rs.)', 'Amount (Rs.)']], body: tableBody, theme: 'grid', margin: { left: 14, right: 14 }, styles: { fontSize: 8 }, headStyles: { fillColor: [245, 158, 11] } });
+  pdfDoc.autoTable({ startY: y, head: [['Product', 'Qty', 'Unit', 'Rate (Rs.)', 'Amount (Rs.)']], body: tableBody, theme: 'grid', margin: { left: 14, right: 14 }, styles: { fontSize: 8 }, headStyles: { fillColor: [245, 158, 11] } });
   y = pdfDoc.lastAutoTable.finalY + 6;
   if (data.discountAmount > 0) { pdfDoc.text(`Discount: Rs. -${Number(data.discountAmount).toFixed(2)}`, 14, y); y += 5; }
   if (data.vatAmount > 0) { pdfDoc.text(`VAT: Rs. ${Number(data.vatAmount).toFixed(2)}`, 14, y); y += 5; }
   pdfDoc.setFont('helvetica', 'bold');
   pdfDoc.text(`Grand Total: Rs. ${Number(data.grandTotal).toFixed(2)}`, 14, y); y += 14;
 
-  // Authorised signature
-  pdfDoc.setFont('helvetica', 'normal');
-  pdfDoc.setFontSize(8);
-  pdfDoc.text('_______________', 14, y);
-  pdfDoc.text('Authorised Signature', 14, y + 4);
+  // Authorised signature - FIXED: text above line
   pdfDoc.setFont('times', 'italic');
   pdfDoc.setFontSize(10);
-  pdfDoc.text(data.authorisedSignature || 'Authorised', 14, y + 12);
+  pdfDoc.text(data.authorisedSignature || 'Authorised', 14, y);
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(8);
+  pdfDoc.text('_______________', 14, y + 8);
+  pdfDoc.text('Authorised Signature', 14, y + 14);
   pdfDoc.setFont('helvetica', 'normal');
   pdfDoc.setFontSize(8);
   pdfDoc.text('_______________', pageW / 2 + 20, y);
-  pdfDoc.text('Customer Signature', pageW / 2 + 20, y + 5);
+  pdfDoc.text('Company Stamp', pageW / 2 + 20, y + 5);
   y += 22;
 
   // Footer note
@@ -1091,22 +1222,26 @@ async function generateOrderInvoicePDF(data) {
   pdfDoc.text('Note: System-generated invoice. Prices from selling rates catalog.', 14, y, { maxWidth: pageW - 28 });
   y += 8;
 
-  // Company stamp (bottom-right)
+  // Company stamp (bottom-right) - FIXED: stamp above line
   const stampDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const stampW = 45;
   const stampH = 24;
   const stampX = pageW - 14 - stampW;
-  const stampY = pageH - 14 - stampH;
+  const stampY = pageH - 20 - stampH;  // Raised up 6mm for line space
   pdfDoc.setDrawColor(180, 60, 60);
   pdfDoc.setLineWidth(0.5);
   pdfDoc.rect(stampX, stampY, stampW, stampH);
   pdfDoc.setFontSize(5);
   pdfDoc.setTextColor(120, 40, 40);
   pdfDoc.setFont('helvetica', 'bold');
-  pdfDoc.text('COMPANY STAMP', stampX + stampW / 2, stampY + 6, { align: 'center' });
+  pdfDoc.text('COMPANY STAMP', stampX + stampW / 2, stampY + 20, { align: 'center' });
   pdfDoc.setFont('helvetica', 'normal');
   pdfDoc.text((companyInfo.name || 'Kathmandu Textile').slice(0, 28), stampX + stampW / 2, stampY + 12, { align: 'center', maxWidth: stampW - 4 });
   pdfDoc.text(stampDate, stampX + stampW / 2, stampY + 19, { align: 'center' });
+  // Stamp line below
+  pdfDoc.setDrawColor(120, 40, 40);
+  pdfDoc.setLineWidth(0.3);
+  pdfDoc.line(stampX, stampY + stampH + 2, stampX + stampW, stampY + stampH + 2);
   pdfDoc.setTextColor(0, 0, 0);
 
   return pdfDoc;
@@ -1627,32 +1762,100 @@ async function loadWageEntries() {
   if (!tblWageEntriesBody) return;
   try {
     const snap = await getDocs(collection(db, 'wageEntries'));
-    const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    tblWageEntriesBody.innerHTML = '';
-    if (!entries.length) {
-      tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#94a3b8;padding:1.5rem;">No wage entries found.</td></tr>';
-      return;
-    }
-    entries.forEach(w => {
-      const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${escapeHtml(w.date || '—')}</td><td>${escapeHtml(empName)}</td><td>${escapeHtml(w.employeeId || '—')}</td>
-        <td>${escapeHtml(w.department || '—')}</td><td>${escapeHtml(w.item || '—')}</td><td>${w.qty || 0}</td>
-        <td>${escapeHtml(w.unit || '—')}</td><td>${w.rate || 0}</td><td>${w.ot || 0}</td><td>${w.bonus || 0}</td>
-        <td>${w.deduct || 0}</td><td><strong style="color:#f59e0b">Rs. ${(w.net || 0).toLocaleString()}</strong></td>
-        <td><button class="btn-delete-wage" data-id="${w.id}" data-emp="${escapeHtml(empName)}" data-date="${escapeHtml(w.date || '—')}" data-item="${escapeHtml(w.item || '—')}" data-qty="${w.qty || 0}" data-net="${w.net || 0}" title="Delete">🗑️</button></td>`;
-      tblWageEntriesBody.appendChild(tr);
-    });
-    tblWageEntriesBody.querySelectorAll('.btn-delete-wage').forEach(btn => {
-      btn.addEventListener('click', () => openDeleteWageModal(btn));
-    });
+    allWageEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    allWageEntries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    renderWageEntriesFiltered();
   } catch (err) {
     console.error('Failed to load wage entries:', err);
+    allWageEntries = [];
     tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#ef4444;">Failed to load wage entries.</td></tr>';
   }
 }
+
+function getFilteredWageEntries() {
+  const searchTerm = (wageSearchInput?.value || '').trim().toLowerCase();
+  const dateFrom = wageDateFrom?.value || '';
+  const dateTo = wageDateTo?.value || '';
+  return allWageEntries.filter(w => {
+    const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '';
+    const empId = (w.employeeId || '').toString().toLowerCase();
+    const nameMatch = !searchTerm || empName.toLowerCase().includes(searchTerm) || empId.includes(searchTerm);
+    const wDate = w.date || '';
+    const dateMatch = (!dateFrom || wDate >= dateFrom) && (!dateTo || wDate <= dateTo);
+    return nameMatch && dateMatch;
+  });
+}
+
+function renderWageEntriesFiltered() {
+  if (!tblWageEntriesBody) return;
+  const entries = getFilteredWageEntries();
+  tblWageEntriesBody.innerHTML = '';
+  if (!entries.length) {
+    tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#94a3b8;padding:1.5rem;">No wage entries found.</td></tr>';
+    return;
+  }
+  entries.forEach(w => {
+    const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(w.date || '—')}</td><td>${escapeHtml(empName)}</td><td>${escapeHtml(w.employeeId || '—')}</td>
+      <td>${escapeHtml(w.department || '—')}</td><td>${escapeHtml(w.item || '—')}</td><td>${w.qty || 0}</td>
+      <td>${escapeHtml(w.unit || '—')}</td><td>${w.rate || 0}</td><td>${w.ot || 0}</td><td>${w.bonus || 0}</td>
+      <td>${w.deduct || 0}</td><td><strong style="color:#f59e0b">Rs. ${(w.net || 0).toLocaleString()}</strong></td>
+      <td><button class="btn-delete-wage" data-id="${w.id}" data-emp="${escapeHtml(empName)}" data-date="${escapeHtml(w.date || '—')}" data-item="${escapeHtml(w.item || '—')}" data-qty="${w.qty || 0}" data-net="${w.net || 0}" title="Delete">🗑️</button></td>`;
+    tblWageEntriesBody.appendChild(tr);
+  });
+  tblWageEntriesBody.querySelectorAll('.btn-delete-wage').forEach(btn => {
+    btn.addEventListener('click', () => openDeleteWageModal(btn));
+  });
+}
+
+function exportWageEntriesCSV() {
+  const entries = getFilteredWageEntries();
+  if (!entries.length) {
+    showToast('No wage entries to export.', 'error');
+    return;
+  }
+  const headers = ['Date', 'Employee', 'Emp ID', 'Department', 'Item', 'Qty', 'Unit', 'Rate', 'OT', 'Bonus', 'Deduct', 'Net Wage'];
+  const rows = entries.map(w => {
+    const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
+    return [
+      w.date || '',
+      empName,
+      w.employeeId || '',
+      w.department || '',
+      w.item || '',
+      w.qty ?? '',
+      w.unit || '',
+      w.rate ?? '',
+      w.ot ?? '',
+      w.bonus ?? '',
+      w.deduct ?? '',
+      w.net ?? ''
+    ];
+  });
+  const esc = v => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `wage_entries_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('CSV exported successfully.', 'success');
+}
+
+if (wageSearchInput) wageSearchInput.addEventListener('input', renderWageEntriesFiltered);
+if (btnWageFilter) btnWageFilter.addEventListener('click', renderWageEntriesFiltered);
+if (wageDateFrom) wageDateFrom.addEventListener('change', renderWageEntriesFiltered);
+if (wageDateTo) wageDateTo.addEventListener('change', renderWageEntriesFiltered);
+if (btnWageExportCsv) btnWageExportCsv.addEventListener('click', exportWageEntriesCSV);
 
 if (btnPreviewSlip) {
   btnPreviewSlip.addEventListener('click', async () => {
