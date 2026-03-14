@@ -9,7 +9,7 @@
 /* ── Variables ── */
 :root {
   --navy-950: #070b15;
-  --navy-900: #2346c4;
+  --navy-900: #0b0f1e;
   --navy-800: #111827;
   --navy-700: #1f3e8d;
   --navy-600: #1e2d45;
@@ -519,6 +519,32 @@ body.manager-page {
   font-size: 0.8rem;
 }
 
+.btn-xs {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.7rem;
+}
+
+.btn-actions-toggle {
+  position: relative;
+  padding-right: 1.4rem;
+}
+
+.order-actions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(11,15,30,0.98);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 10;
+}
+
 .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
 
 /* ================================================================
@@ -630,6 +656,224 @@ body.manager-page {
 }
 
 /* ================================================================
+   PAYSLIP DOCUMENT (KTT Style)
+   ================================================================ */
+#payslip-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.payslip-document {
+  background: #fff;
+  color: #1e293b;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+.payslip-header-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 1.2rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  gap: 1.5rem;
+}
+
+.payslip-logo-placeholder {
+  width: 60px;
+  height: 60px;
+  border: 2px dashed #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.payslip-company-block {
+  flex: 1;
+}
+
+.payslip-company-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: 0.02em;
+}
+
+.payslip-company-address,
+.payslip-company-contact,
+.payslip-company-pan {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+.payslip-meta-block {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.payslip-meta-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.payslip-meta-date,
+.payslip-meta-slipno {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+.payslip-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  text-align: center;
+  padding: 1rem;
+  letter-spacing: 0.08em;
+}
+
+.payslip-period {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #64748b;
+  padding-bottom: 1rem;
+}
+
+.payslip-details-row {
+  display: flex;
+  gap: 2rem;
+  padding: 0 1.5rem 1.2rem;
+}
+
+.payslip-employee-block,
+.payslip-payment-block {
+  flex: 1;
+}
+
+.payslip-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.payslip-info-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.payslip-info-table td:first-child {
+  color: #64748b;
+  width: 120px;
+}
+
+.payslip-earn-deduct-row {
+  display: flex;
+  gap: 2rem;
+  padding: 0 1.5rem 1.2rem;
+}
+
+.payslip-earnings,
+.payslip-deductions {
+  flex: 1;
+}
+
+.payslip-earnings h4,
+.payslip-deductions h4 {
+  font-size: 0.9rem;
+  color: #0f172a;
+  margin: 0 0 0.5rem;
+}
+
+.payslip-earn-table,
+.payslip-deduct-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.payslip-earn-table th,
+.payslip-deduct-table th {
+  background: #f1f5f9;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  font-weight: 600;
+  color: #475569;
+}
+
+.payslip-earn-table td,
+.payslip-deduct-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.payslip-earn-table td:last-child,
+.payslip-deduct-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.payslip-summary {
+  padding: 1rem 1.5rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.payslip-summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+  font-size: 0.9rem;
+}
+
+.payslip-summary-row.payslip-net {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0f172a;
+  margin-top: 0.3rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.payslip-signature-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2rem 1.5rem;
+  gap: 2rem;
+}
+
+.payslip-sig-box {
+  flex: 1;
+  max-width: 200px;
+}
+
+.payslip-sig-line {
+  border-bottom: 1px solid #1e293b;
+  height: 24px;
+  margin-bottom: 0.3rem;
+}
+
+.payslip-sig-label {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.payslip-disclaimer {
+  padding: 1rem 1.5rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  background: #f8fafc;
+  text-align: center;
+  font-style: italic;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* ================================================================
    ORDER STATUS BADGES
    ================================================================ */
 .status-badge {
@@ -662,6 +906,69 @@ body.manager-page {
   background: rgba(244,63,94,0.12);
   color: #fda4af;
   border: 1px solid rgba(244,63,94,0.3);
+}
+
+.status-completed {
+  background: rgba(16,185,129,0.12);
+  color: #6ee7b7;
+  border: 1px solid rgba(16,185,129,0.3);
+}
+
+/* Order Actions Dropdown */
+.order-actions-dropdown {
+  position: relative;
+}
+
+.order-actions-trigger {
+  min-width: 90px;
+}
+
+.order-actions-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 140px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  padding: 6px 0;
+  z-index: 100;
+}
+
+.order-actions-menu.show {
+  display: block;
+}
+
+.order-action-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.order-action-item:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.order-action-item.order-action-delete:hover {
+  background: rgba(244,63,94,0.15);
+  color: #fda4af;
+}
+
+.order-action-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 6px 0;
 }
 
 /* ================================================================
@@ -941,4 +1248,130 @@ body.manager-page {
 
 @media (max-width: 480px) {
   .employee-modal-grid { grid-template-columns: 1fr; }
+}
+
+/* Delete Confirmation Modal */
+.delete-confirm-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    animation: fadeInOverlay 0.2s ease forwards;
+}
+
+@keyframes fadeInOverlay {
+    to { opacity: 1; }
+}
+
+.delete-confirm-modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 420px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    text-align: center;
+    transform: scale(0.8);
+    animation: scaleIn 0.25s ease forwards;
+}
+
+@keyframes scaleIn {
+    to { transform: scale(1); }
+}
+
+.delete-confirm-modal .delete-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: #fee2e2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    font-size: 2rem;
+}
+
+.delete-confirm-modal h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+    color: #1a1a2e;
+}
+
+.delete-confirm-modal p {
+    margin: 0 0 0.25rem;
+    color: #666;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.delete-confirm-modal .order-detail {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    text-align: left;
+    font-size: 0.85rem;
+    color: #444;
+}
+
+.delete-confirm-modal .order-detail span {
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.delete-confirm-modal .warning-text {
+    color: #dc3545;
+    font-weight: 500;
+    font-size: 0.8rem;
+    margin-bottom: 1.25rem;
+}
+
+.delete-confirm-modal .confirm-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+}
+
+.delete-confirm-modal .btn-cancel-delete {
+    padding: 0.6rem 1.5rem;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #555;
+    transition: all 0.2s;
+}
+
+.delete-confirm-modal .btn-cancel-delete:hover {
+    background: #f0f0f0;
+    border-color: #ccc;
+}
+
+.delete-confirm-modal .btn-confirm-delete {
+    padding: 0.6rem 1.5rem;
+    border: none;
+    background: #dc3545;
+    color: #fff;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.delete-confirm-modal .btn-confirm-delete:hover {
+    background: #c82333;
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.delete-confirm-modal .btn-confirm-delete:active {
+    transform: scale(0.97);
 }
