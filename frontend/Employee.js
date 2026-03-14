@@ -451,64 +451,228 @@ async function loadInventoryProducts() {
   }
 }
 
-// Product search input handler
-const orderProductInput = document.getElementById("orderProduct");
-if (orderProductInput) {
-  orderProductInput.addEventListener("input", (e) => {
-    const value = e.target.value;
-    const options = document.querySelectorAll("#product-list option");
-    
+// ─── Multi-product order system ───
+
+let orderRowCounter = 0;
+
+// Bind product search on any row (delegation)
+function bindProductSearchForRow(row) {
+  const searchInput = row.querySelector('.order-row-product-search');
+  if (!searchInput) return;
+  searchInput.addEventListener('input', () => {
+    const value = searchInput.value;
+    const options = document.querySelectorAll('#product-list option');
     for (const opt of options) {
       if (opt.value === value) {
-        document.getElementById("orderBarcode").value = opt.dataset.barcode || '';
-        document.getElementById("orderName").value = opt.dataset.name || value.split(' (')[0] || 'Product';
-        document.getElementById("orderUnit").value = opt.dataset.unit || '';
+        row.querySelector('.order-row-barcode').value = opt.dataset.barcode || '';
+        row.querySelector('.order-row-name').value = opt.dataset.name || value.split(' (')[0] || 'Product';
+        const unitSelect = row.querySelector('.order-row-unit');
+        if (opt.dataset.unit && unitSelect) {
+          unitSelect.value = opt.dataset.unit;
+        }
         break;
       }
     }
   });
 }
 
+function createProductRow(index) {
+  const row = document.createElement('div');
+  row.className = 'order-product-row';
+  row.dataset.row = index;
+  row.innerHTML = `
+    <div class="order-product-row-header">
+      <span class="order-product-row-num">Product #${index + 1}</span>
+      <button type="button" class="btn-remove-product-row" title="Remove this product">✕</button>
+    </div>
+    <div class="order-product-row-fields">
+      <div class="form-group order-product-search-group">
+        <label>Product (Search from Inventory)</label>
+        <input type="text" class="order-row-product-search" list="product-list" placeholder="Start typing product name or barcode..." required>
+        <input type="hidden" class="order-row-barcode">
+        <input type="hidden" class="order-row-name">
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Quantity</label>
+          <input type="number" class="order-row-qty" min="1" step="0.01" required>
+        </div>
+        <div class="form-group">
+          <label>Unit</label>
+          <select class="order-row-unit" required>
+            <option value="">Select unit</option>
+            <option value="kg">kg</option>
+            <option value="ltr">ltr</option>
+            <option value="meter">meter</option>
+            <option value="piece">piece</option>
+            <option value="roll">Koiree</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  `;
+  bindProductSearchForRow(row);
+  return row;
+}
+
+function updateOrderProductCount() {
+  const count = document.querySelectorAll('#order-products-container .order-product-row').length;
+  const countEl = document.getElementById('order-product-count');
+  if (countEl) countEl.textContent = count;
+}
+
+function renumberProductRows() {
+  const rows = document.querySelectorAll('#order-products-container .order-product-row');
+  rows.forEach((row, i) => {
+    const numEl = row.querySelector('.order-product-row-num');
+    if (numEl) numEl.textContent = `Product #${i + 1}`;
+    row.dataset.row = i;
+  });
+}
+
+function updateRemoveButtons() {
+  const rows = document.querySelectorAll('#order-products-container .order-product-row');
+  rows.forEach(row => {
+    const btn = row.querySelector('.btn-remove-product-row');
+    if (!btn) return;
+    if (rows.length <= 1) {
+      btn.disabled = true;
+    } else {
+      btn.disabled = false;
+    }
+  });
+}
+
+// Initialize multi-product order UI
+function initMultiProductOrder() {
+  const container = document.getElementById('order-products-container');
+  const addBtn = document.getElementById('btn-add-product-row');
+
+  if (!container || !addBtn) return;
+
+  // Bind search for the first existing row
+  const firstRow = container.querySelector('.order-product-row');
+  if (firstRow) bindProductSearchForRow(firstRow);
+
+  // ➕ Add Product button
+  addBtn.addEventListener('click', () => {
+    orderRowCounter++;
+    const row = createProductRow(container.querySelectorAll('.order-product-row').length);
+    container.appendChild(row);
+    updateOrderProductCount();
+    updateRemoveButtons();
+    // Focus the new row's search input
+    row.querySelector('.order-row-product-search')?.focus();
+    // Scroll the row into view
+    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  // ✕ Remove button (delegated)
+  container.addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.btn-remove-product-row');
+    if (!removeBtn || removeBtn.disabled) return;
+
+    const row = removeBtn.closest('.order-product-row');
+    row.classList.add('removing');
+    setTimeout(() => {
+      row.remove();
+      renumberProductRows();
+      updateOrderProductCount();
+      updateRemoveButtons();
+    }, 300);
+  });
+}
+
+// Collect all product rows into an array
+function collectOrderProducts() {
+  const rows = document.querySelectorAll('#order-products-container .order-product-row');
+  const products = [];
+
+  for (const row of rows) {
+    const searchVal = row.querySelector('.order-row-product-search')?.value?.trim() || '';
+    const barcode = row.querySelector('.order-row-barcode')?.value?.trim() || '';
+    const name = row.querySelector('.order-row-name')?.value?.trim() || searchVal.split(' (')[0] || '';
+    const qty = row.querySelector('.order-row-qty')?.value?.trim();
+    const unit = row.querySelector('.order-row-unit')?.value?.trim();
+
+    if (!name || !barcode) {
+      row.querySelector('.order-row-product-search')?.focus();
+      return { error: `Please select a valid product from inventory for Product #${products.length + 1}.` };
+    }
+    if (!qty || isNaN(Number(qty)) || Number(qty) <= 0) {
+      row.querySelector('.order-row-qty')?.focus();
+      return { error: `Please enter a valid quantity for "${name}".` };
+    }
+    if (!unit) {
+      row.querySelector('.order-row-unit')?.focus();
+      return { error: `Please select a unit for "${name}".` };
+    }
+
+    products.push({
+      productBarcode: barcode,
+      productName: name,
+      category: 'finished product',
+      quantity: Number(qty),
+      unit
+    });
+  }
+
+  if (products.length === 0) {
+    return { error: 'Please add at least one product.' };
+  }
+
+  return { products };
+}
+
+function resetOrderForm() {
+  const form = document.getElementById('orderForm');
+  if (form) form.reset();
+
+  const container = document.getElementById('order-products-container');
+  if (container) {
+    // Remove all rows, re-create one fresh row
+    container.innerHTML = '';
+    orderRowCounter = 0;
+    const row = createProductRow(0);
+    const removeBtn = row.querySelector('.btn-remove-product-row');
+    if (removeBtn) removeBtn.disabled = true;
+    container.appendChild(row);
+  }
+  updateOrderProductCount();
+}
+
 // Load products on page load
 loadInventoryProducts();
 
-// Handle order form submission
+// Init multi-product UI
+initMultiProductOrder();
+
+// Handle order form submission (multi-product)
 const orderForm = document.getElementById("orderForm");
 if (orderForm) {
   orderForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    
-    // Read form values
-    const orderBarcodeEl = document.getElementById("orderBarcode");
-    const orderNameEl = document.getElementById("orderName");
-    const orderQtyEl = document.getElementById("orderQty");
-    const orderUnitEl = document.getElementById("orderUnit");
-    const orderNotesEl = document.getElementById("orderNotes");
-    const supplierNameEl = document.getElementById("supplierName");
-    const supplierContactEl = document.getElementById("supplierContact");
-    const supplierAddressEl = document.getElementById("supplierAddress");
-    const deliveryDateEl = document.getElementById("deliveryDate");
-    
-    const barcode = orderBarcodeEl?.value?.trim() || '';
-    const productName = orderNameEl?.value?.trim() || '';
-    const qty = orderQtyEl?.value?.trim();
-    const unit = orderUnitEl?.value?.trim();
-    const notes = orderNotesEl?.value?.trim();
-    const supplierName = supplierNameEl?.value?.trim();
-    const supplierContact = supplierContactEl?.value?.trim();
-    const deliveryAddress = supplierAddressEl?.value?.trim();  // supplierAddress → deliveryAddress
-    const deliveryDate = deliveryDateEl?.value?.trim();
-    
-    // Define missing category from finished products context
-    const category = 'finished product';
-    
-    // Validation
-    if (!productName || !barcode || !qty || isNaN(Number(qty)) || Number(qty) <= 0 || 
-        !unit || !deliveryDate || !supplierName || !supplierContact || !deliveryAddress) {
-      showMessage("Please select a product, fill all required fields (Qty, Unit, Supplier details, Delivery date).", true);
+
+    // Supplier details
+    const supplierName = document.getElementById("supplierName")?.value?.trim();
+    const supplierContact = document.getElementById("supplierContact")?.value?.trim();
+    const supplierAddress = document.getElementById("supplierAddress")?.value?.trim();
+    const deliveryDate = document.getElementById("deliveryDate")?.value?.trim();
+    const notes = document.getElementById("orderNotes")?.value?.trim();
+
+    if (!supplierName || !supplierContact || !supplierAddress || !deliveryDate) {
+      showMessage("Please fill all supplier details and delivery date.", true);
       return;
     }
 
+    // Collect products
+    const result = collectOrderProducts();
+    if (result.error) {
+      showMessage(result.error, true);
+      return;
+    }
+
+    const { products } = result;
     const submitBtn = orderForm.querySelector('button[type="submit"]');
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -519,25 +683,31 @@ if (orderForm) {
       await addDoc(collection(db, "orders"), {
         employeeId: auth.currentUser?.uid,
         employeeName: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
-        productBarcode: barcode,
-        productName,
-        category,
-        quantity: Number(qty),
-        unit,
-        notes: notes || null,
+        // Store products as array for multi-product support
+        products,
+        productCount: products.length,
+        // Also keep top-level fields for backward compatibility (first product)
+        productBarcode: products[0].productBarcode,
+        productName: products[0].productName,
+        category: products[0].category,
+        quantity: products[0].quantity,
+        unit: products[0].unit,
+        // Supplier & delivery
         supplierName,
         supplierContact,
-        supplierAddress: supplierName || null,  // Keep original supplierAddress field
-        deliveryAddress,
-        status: "pending",
+        supplierAddress,
+        deliveryAddress: supplierAddress,
         deliveryDate,
+        notes: notes || null,
+        status: "pending",
         createdAt: serverTimestamp()
       });
-      showMessage("✅ Order submitted successfully! Manager will review.");
-      orderForm.reset();
-      // Clear hidden fields
-      if (orderBarcodeEl) orderBarcodeEl.value = '';
-      if (orderNameEl) orderNameEl.value = '';
+
+      const productCountText = products.length === 1
+        ? `1 product`
+        : `${products.length} products`;
+      showMessage(`✅ Order submitted with ${productCountText}! Manager will review.`);
+      resetOrderForm();
     } catch (err) {
       console.error("Order submit error:", err);
       showMessage("❌ Failed to submit order: " + (err.message || err), true);

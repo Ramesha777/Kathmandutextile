@@ -5,6 +5,7 @@ import {
   getFirestore,
   collection,
   getDocs,
+  getDoc,
   addDoc,
   doc,
   deleteDoc,
@@ -75,6 +76,13 @@ const deleteWageDetails = document.getElementById('delete-wage-details');
 const btnConfirmWageDelete = document.getElementById('btn-confirm-delete');
 const btnCancelWageDelete = document.getElementById('btn-cancel-delete');
 const modalCloseWageDelete = document.getElementById('modal-close-delete');
+
+let deleteInventoryId = null;
+const deleteInventoryModal = document.getElementById('delete-inventory-modal');
+const deleteInventoryDetails = document.getElementById('delete-inventory-details');
+const btnConfirmInventoryDelete = document.getElementById('btn-confirm-inventory-delete');
+const btnCancelInventoryDelete = document.getElementById('btn-cancel-inventory-delete');
+const modalCloseInventoryDelete = document.getElementById('modal-close-inventory-delete');
 
 let managerInventoryItems = [];
 let managerUserNameByUid = {};
@@ -439,6 +447,77 @@ function onWageEmployeeInput() {
   }
 }
 
+// ── Inventory delete functions ──
+function openInventoryDeleteModal(btn) {
+  deleteInventoryId = btn.dataset.id;
+  const name = btn.dataset.name;
+  const barcode = btn.dataset.barcode;
+  const qty = btn.dataset.qty;
+  const category = btn.dataset.category;
+
+  if (deleteInventoryDetails) {
+    deleteInventoryDetails.innerHTML = `
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;">
+        <span style="color:#94a3b8;">Name:</span><span style="color:#f0f4ff;font-weight:600;">${name}</span>
+        <span style="color:#94a3b8;">Barcode:</span><span style="color:#f0f4ff;">${barcode}</span>
+        <span style="color:#94a3b8;">Category:</span><span style="color:#f0f4ff;">${category}</span>
+        <span style="color:#94a3b8;">Qty:</span><span style="color:#f0f4ff;">${qty}</span>
+      </div>`;
+  }
+
+  if (deleteInventoryModal) deleteInventoryModal.style.display = 'flex';
+}
+
+function closeInventoryDeleteModal() {
+  deleteInventoryId = null;
+  if (deleteInventoryModal) deleteInventoryModal.style.display = 'none';
+}
+
+async function confirmDeleteInventory() {
+  if (!deleteInventoryId) return;
+
+  const btn = btnConfirmInventoryDelete;
+  const originalText = btn.textContent;
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    btn.style.opacity = '0.6';
+
+    await deleteDoc(doc(db, 'inventory', deleteInventoryId));
+
+    showToast('Inventory item deleted successfully', 'success');
+    closeInventoryDeleteModal();
+    
+    // Reload inventory
+    await loadManagerInventory();
+
+  } catch (err) {
+    console.error('Failed to delete inventory:', err);
+    showToast('Failed to delete: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+    btn.style.opacity = '1';
+  }
+}
+
+// ── Inventory delete modal event listeners ──
+if (btnConfirmInventoryDelete) {
+  btnConfirmInventoryDelete.addEventListener('click', confirmDeleteInventory);
+}
+if (btnCancelInventoryDelete) {
+  btnCancelInventoryDelete.addEventListener('click', closeInventoryDeleteModal);
+}
+if (modalCloseInventoryDelete) {
+  modalCloseInventoryDelete.addEventListener('click', closeInventoryDeleteModal);
+}
+if (deleteInventoryModal) {
+  deleteInventoryModal.addEventListener('click', (e) => {
+    if (e.target === deleteInventoryModal) closeInventoryDeleteModal();
+  });
+}
+
 // Load manager inventory
 async function loadManagerInventory() {
   if (!managerInventoryListEl) return;
@@ -452,6 +531,10 @@ async function loadManagerInventory() {
     const currentVal = managerInventoryCategoryFilterEl?.value || '';
     managerInventoryCategoryFilterEl.innerHTML = '<option value="">All categories</option>' + categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
     if (currentVal && categories.includes(currentVal)) managerInventoryCategoryFilterEl.value = currentVal;
+
+    if (managerInventoryCategoryFilterEl) {
+      managerInventoryCategoryFilterEl.addEventListener('change', renderManagerInventory);
+    }
 
     renderManagerInventory();
   } catch (err) {
@@ -469,7 +552,7 @@ function renderManagerInventory() {
   }
   let html = `
     <table class="manager-table">
-      <thead><tr><th>Barcode/ID</th><th>Name</th><th>Category</th><th>Qty</th><th>Unit</th><th>Vendor</th><th>Storage</th></tr></thead>
+      <thead><tr><th>Barcode/ID</th><th>Name</th><th>Category</th><th>Qty</th><th>Unit</th><th>Vendor</th><th>Storage</th><th>Actions</th></tr></thead>
       <tbody>`;
   for (const x of items) {
     const qty = x.quantity != null ? x.quantity : '—';
@@ -482,10 +565,26 @@ function renderManagerInventory() {
         <td>${escapeHtml(x.unit || x.units || '—')}</td>
         <td>${escapeHtml(x.vendorName || '—')}</td>
         <td>${escapeHtml(x.storageArea || '—')}</td>
+        <td>
+          <button type="button" class="btn-delete-inventory btn btn-sm btn-danger" 
+                  data-id="${x.id}" 
+                  data-name="${escapeHtml(x.name || '—')}"
+                  data-barcode="${escapeHtml(x.barcode || '—')}"
+                  data-qty="${escapeHtml(x.quantity != null ? x.quantity : '—')}"
+                  data-category="${escapeHtml(x.category || '—')}"
+                  title="Delete inventory item">
+            🗑️
+          </button>
+        </td>
       </tr>`;
   }
   html += '</tbody></table>';
   managerInventoryListEl.innerHTML = html;
+  
+  // Attach delete listeners
+  managerInventoryListEl.querySelectorAll('.btn-delete-inventory').forEach(btn => {
+    btn.addEventListener('click', () => openInventoryDeleteModal(btn));
+  });
 }
 
 // Load manager damage reports (problem_reports)
@@ -542,6 +641,10 @@ async function loadManagerDamageReports() {
   }
 }
 
+function normalizeForMatch(s) {
+  return (String(s || '')).trim().toLowerCase();
+}
+
 // Load manager orders with approve/reject
 async function loadManagerOrders() {
   if (!managerOrdersListEl) return;
@@ -551,12 +654,30 @@ async function loadManagerOrders() {
     let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     items.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
 
+    // Load selling rates for price display
+    const ratesSnap = await getDocs(collection(db, 'rates_selling'));
+    const ratesMap = {};
+    ratesSnap.docs.forEach(d => {
+      const r = d.data();
+      const name = r.productName || r.name || '';
+      const unit = r.unit || '';
+      if (name) {
+        // Store by name only AND by name+unit for flexible matching
+        const keyNameOnly = normalizeForMatch(name);
+        const keyFull = normalizeForMatch(name) + '||' + normalizeForMatch(unit);
+        ratesMap[keyFull] = Number(r.sellingPrice ?? r.rate ?? 0);
+        // Also store by name only (fallback)
+        if (!ratesMap[keyNameOnly]) ratesMap[keyNameOnly] = Number(r.sellingPrice ?? r.rate ?? 0);
+      }
+    });
+
     const search = (orderSearchQueryEl?.value || '').toLowerCase().trim();
     const statusFilter = orderStatusFilterEl?.value || '';
     if (search) {
       items = items.filter(o =>
         (String(o.supplierContact || '')).toLowerCase().includes(search) ||
-        (String(o.supplierName || '')).toLowerCase().includes(search)
+        (String(o.supplierName || '')).toLowerCase().includes(search) ||
+        (String(o.productName || '')).toLowerCase().includes(search)
       );
     }
     if (statusFilter) {
@@ -570,30 +691,78 @@ async function loadManagerOrders() {
 
     let html = `
       <table class="manager-table">
-        <thead><tr><th>Product</th><th>Qty</th><th>Unit</th><th>Supplier</th><th>Contact</th><th>Delivery</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Products</th><th>Supplier</th><th>Contact</th><th>Address</th><th>Delivery</th><th>Est. Total</th><th>Notes</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>`;
     for (const o of items) {
       const deliveryDate = o.deliveryDate || '—';
       const status = (o.status || 'pending').toLowerCase();
-      const productEsc = escapeHtml(o.productName || '—');
+
+      // ── Build products cell: support both multi-product array and legacy single-product ──
+      let productsArray = [];
+      if (Array.isArray(o.products) && o.products.length > 0) {
+        productsArray = o.products;
+      } else if (o.productName) {
+        productsArray = [{
+          productName: o.productName,
+          productBarcode: o.productBarcode || '—',
+          quantity: o.quantity,
+          unit: o.unit
+        }];
+      }
+
+      // Calculate total from selling rates
+      let orderTotal = 0;
+      const productLines = [];
+      for (const p of productsArray) {
+        const name = p.productName || p.name || '—';
+        const unit = p.unit || '—';
+        const qty = Number(p.quantity) || 0;
+        const keyFull = normalizeForMatch(name) + '||' + normalizeForMatch(unit);
+        const keyName = normalizeForMatch(name);
+        const rate = ratesMap[keyFull] ?? ratesMap[keyName] ?? 0;
+        const lineTotal = qty * rate;
+        orderTotal += lineTotal;
+        productLines.push({ name, qty, unit, rate, lineTotal });
+      }
+
+      const productsCellHtml = productsArray.length === 0
+        ? '<span style="color:#64748b;">0</span>'
+        : `<span style="font-weight:500;color:#f0f4ff;">${productsArray.length}</span>`;
+
+      // Estimated total cell
+      const totalCellHtml = orderTotal > 0
+        ? `<span style="color:#f59e0b;font-weight:700;font-size:0.95rem;">Rs. ${orderTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>`
+        : `<span style="color:#ef4444;font-size:0.8rem;" title="No selling rates found for these products">⚠️ No rates</span>`;
+
+      const productSummary = productsArray.map(p => `${p.productName || '—'} (×${p.quantity ?? '?'})`).join(', ');
+
       html += `
         <tr>
-          <td>${escapeHtml(o.productName || '—')}</td>
-          <td>${o.quantity ?? '—'}</td>
-          <td>${escapeHtml(o.unit || '—')}</td>
+          <td>${productsCellHtml}</td>
           <td>${escapeHtml(o.supplierName || '—')}</td>
           <td>${escapeHtml(o.supplierContact || '—')}</td>
+          <td>${escapeHtml(o.supplierAddress || o.deliveryAddress || '—')}</td>
           <td>${escapeHtml(deliveryDate)}</td>
+          <td>${totalCellHtml}</td>
+          <td style="max-width:180px;font-size:0.82rem;color:#94a3b8;">${escapeHtml(o.notes || '—')}</td>
           <td><span class="status-badge status-${status}">${escapeHtml(status)}</span></td>
-          <td>
-            <div class="order-actions-dropdown">
-              <button type="button" class="btn btn-sm btn-outline order-actions-trigger" data-id="${o.id}" data-product="${productEsc}">Actions ▾</button>
+          <td style="white-space:nowrap;">
+            <div class="order-actions-dropdown" 
+                 data-id="${o.id}" 
+                 data-product="${escapeHtml(productSummary)}"
+                 data-supplier="${escapeHtml(o.supplierName || '—')}"
+                 data-qty="${productsArray.length} product(s)"
+                 data-status="${status}">
+              <button type="button" class="btn btn-sm btn-outline order-actions-trigger" title="Actions">Actions ▼</button>
               <div class="order-actions-menu">
-                <button type="button" class="order-action-item" data-action="pending">Pending</button>
                 <button type="button" class="order-action-item" data-action="approved">Approved</button>
-                <button type="button" class="order-action-item" data-action="completed">Completed</button>
+                <button type="button" class="order-action-item" data-action="pending">Pending</button>
+                <button type="button" class="order-action-item" data-action="rejected">Rejected</button>
                 <hr class="order-action-divider">
-                <button type="button" class="order-action-item order-action-delete" data-action="delete">Delete</button>
+                <button type="button" class="order-action-item" data-action="preview-invoice">👁️ Preview Invoice</button>
+                <button type="button" class="order-action-item" data-action="print-invoice">🖨️ Print Invoice</button>
+                <hr class="order-action-divider">
+                <button type="button" class="order-action-item order-action-delete" data-action="delete">🗑️ Delete</button>
               </div>
             </div>
           </td>
@@ -602,24 +771,35 @@ async function loadManagerOrders() {
     html += '</tbody></table>';
     managerOrdersListEl.innerHTML = html;
 
+    // Order actions dropdown: toggle + action handlers
     managerOrdersListEl.querySelectorAll('.order-actions-trigger').forEach(trigger => {
-      const dropdown = trigger.closest('.order-actions-dropdown');
-      const menu = dropdown?.querySelector('.order-actions-menu');
-      const orderId = trigger.dataset.id;
-      const productName = trigger.dataset.product;
       trigger.addEventListener('click', (e) => {
         e.stopPropagation();
+        const dropdown = trigger.closest('.order-actions-dropdown');
+        const menu = dropdown?.querySelector('.order-actions-menu');
         document.querySelectorAll('.order-actions-menu.show').forEach(m => m.classList.remove('show'));
-        menu?.classList.toggle('show');
+        if (menu) menu.classList.toggle('show');
       });
-      menu?.querySelectorAll('.order-action-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const action = item.dataset.action;
-          if (action === 'delete') deleteOrder(orderId, productName);
-          else updateOrderStatus(orderId, action);
-          menu?.classList.remove('show');
-        });
+    });
+
+    managerOrdersListEl.querySelectorAll('.order-action-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dropdown = item.closest('.order-actions-dropdown');
+        const menu = dropdown?.querySelector('.order-actions-menu');
+        if (menu) menu.classList.remove('show');
+        const action = item.dataset.action;
+        const orderId = dropdown?.dataset?.id;
+        if (!orderId) return;
+        if (action === 'delete') {
+          openOrderDeleteModal(dropdown);
+        } else if (action === 'print-invoice') {
+          openInvoiceSignatureModal(orderId, 'download');
+        } else if (action === 'preview-invoice') {
+          openInvoiceSignatureModal(orderId, 'preview');
+        } else {
+          updateOrderStatus(orderId, action);
+        }
       });
     });
   } catch (err) {
@@ -638,15 +818,371 @@ async function updateOrderStatus(orderId, status) {
   }
 }
 
-async function deleteOrder(orderId, productName) {
-  if (!confirm(`Delete order for "${productName}"? This cannot be undone.`)) return;
-  try {
-    await deleteDoc(doc(db, 'orders', orderId));
-    showToast('Order deleted.', 'success');
-    loadManagerOrders();
-  } catch (err) {
-    showToast('Failed to delete order: ' + (err.message || err), 'error');
+// ── Order Invoice PDF ──
+let pendingInvoiceOrderId = null;
+let pendingInvoiceMode = 'download'; // 'download' or 'preview'
+const invoiceSignatureModal = document.getElementById('invoice-signature-modal');
+const invoiceAuthorisedSignatureInput = document.getElementById('invoice-authorised-signature');
+const invoicePreviewModal = document.getElementById('invoice-preview-modal');
+const invoicePreviewBody = document.getElementById('invoice-preview-body');
+
+function openInvoiceSignatureModal(orderId, mode = 'download') {
+  pendingInvoiceOrderId = orderId;
+  pendingInvoiceMode = mode;
+  if (invoiceAuthorisedSignatureInput) invoiceAuthorisedSignatureInput.value = '';
+  if (invoiceSignatureModal) invoiceSignatureModal.style.display = 'flex';
+  invoiceAuthorisedSignatureInput?.focus();
+}
+
+function closeInvoiceSignatureModal() {
+  pendingInvoiceOrderId = null;
+  if (invoiceSignatureModal) invoiceSignatureModal.style.display = 'none';
+}
+
+function getInvoiceOptions() {
+  const sig = (invoiceAuthorisedSignatureInput?.value || '').trim() || 'Authorised';
+  return { sig, discountPercent: 0, vatPercent: 0 };
+}
+
+function getPreviewDiscountVatOpts() {
+  const discountEl = document.getElementById('preview-discount-toggle');
+  const vatEl = document.getElementById('preview-vat-toggle');
+  const discountPercent = discountEl?.checked ? (parseFloat(document.getElementById('preview-discount-percent')?.value) || 0) : 0;
+  const vatPercent = vatEl?.checked ? (parseFloat(document.getElementById('preview-vat-percent')?.value) || 0) : 0;
+  const sig = (invoiceAuthorisedSignatureInput?.value || '').trim() || 'Authorised';
+  return { sig, discountPercent, vatPercent };
+}
+
+function initInvoiceSignatureModal() {
+  document.getElementById('invoice-signature-modal-close')?.addEventListener('click', closeInvoiceSignatureModal);
+  document.getElementById('invoice-signature-modal-cancel')?.addEventListener('click', closeInvoiceSignatureModal);
+
+  document.getElementById('invoice-signature-modal-preview')?.addEventListener('click', async () => {
+    const opts = getInvoiceOptions();
+    const orderId = pendingInvoiceOrderId;
+    closeInvoiceSignatureModal();
+    if (orderId) await previewOrderInvoice(orderId, opts);
+  });
+
+  document.getElementById('invoice-signature-modal-generate')?.addEventListener('click', async () => {
+    const opts = getInvoiceOptions();
+    const orderId = pendingInvoiceOrderId;
+    closeInvoiceSignatureModal();
+    if (orderId) await printOrderInvoice(orderId, opts);
+  });
+
+  invoiceSignatureModal?.addEventListener('click', (e) => {
+    if (e.target === invoiceSignatureModal) closeInvoiceSignatureModal();
+  });
+
+  // Preview modal close
+  document.getElementById('invoice-preview-modal-close')?.addEventListener('click', () => {
+    if (invoicePreviewModal) invoicePreviewModal.style.display = 'none';
+  });
+  document.getElementById('invoice-preview-close-btn')?.addEventListener('click', () => {
+    if (invoicePreviewModal) invoicePreviewModal.style.display = 'none';
+  });
+  invoicePreviewModal?.addEventListener('click', (e) => {
+    if (e.target === invoicePreviewModal) invoicePreviewModal.style.display = 'none';
+  });
+
+  // Preview: Discount/VAT toggles
+  document.getElementById('preview-discount-toggle')?.addEventListener('change', () => {
+    const f = document.getElementById('preview-discount-field');
+    if (f) f.style.display = document.getElementById('preview-discount-toggle')?.checked ? 'block' : 'none';
+  });
+  document.getElementById('preview-vat-toggle')?.addEventListener('change', () => {
+    const f = document.getElementById('preview-vat-field');
+    if (f) f.style.display = document.getElementById('preview-vat-toggle')?.checked ? 'block' : 'none';
+  });
+  document.getElementById('preview-apply-btn')?.addEventListener('click', () => {
+    if (lastPreviewOrderId) applyPreviewDiscountVat();
+  });
+  document.getElementById('invoice-preview-download-btn')?.addEventListener('click', async () => {
+    if (lastPreviewOrderId) await printOrderInvoice(lastPreviewOrderId, getPreviewDiscountVatOpts());
+  });
+}
+
+let lastPreviewOrderId = null;
+
+async function getInvoiceData(orderId, opts = {}) {
+  const orderSnap = await getDoc(doc(db, 'orders', orderId));
+  const order = orderSnap.exists() ? { id: orderSnap.id, ...orderSnap.data() } : null;
+  if (!order) return null;
+  let productsArray = [];
+  if (Array.isArray(order.products) && order.products.length > 0) productsArray = order.products;
+  else if (order.productName) productsArray = [{ productName: order.productName, productBarcode: order.productBarcode || '—', quantity: order.quantity, unit: order.unit }];
+
+  const ratesSnap = await getDocs(collection(db, 'rates_selling'));
+  const ratesMap = {};
+  ratesSnap.docs.forEach(d => {
+    const r = d.data();
+    const name = r.productName || r.name || '';
+    const unit = r.unit || '';
+    if (name) {
+      ratesMap[normalizeForMatch(name) + '||' + normalizeForMatch(unit)] = Number(r.sellingPrice ?? r.rate ?? 0);
+      if (!ratesMap[normalizeForMatch(name)]) ratesMap[normalizeForMatch(name)] = Number(r.sellingPrice ?? r.rate ?? 0);
+    }
+  });
+
+  const lines = [];
+  let subtotal = 0;
+  for (const p of productsArray) {
+    const name = p.productName || p.name || '—';
+    const unit = p.unit || '—';
+    const qty = Number(p.quantity) || 0;
+    const rate = ratesMap[normalizeForMatch(name) + '||' + normalizeForMatch(unit)] ?? ratesMap[normalizeForMatch(name)] ?? 0;
+    const lineTotal = qty * rate;
+    subtotal += lineTotal;
+    lines.push({ productName: name, barcode: p.productBarcode || '—', quantity: qty, unit, rate, lineTotal });
   }
+  const discountPercent = opts.discountPercent || 0;
+  const vatPercent = opts.vatPercent || 0;
+  const discountAmount = subtotal * (discountPercent / 100);
+  const afterDiscount = subtotal - discountAmount;
+  const vatAmount = afterDiscount * (vatPercent / 100);
+  const grandTotal = afterDiscount + vatAmount;
+  return {
+    order, lines, subtotal, discountAmount, vatAmount, grandTotal,
+    invoiceNo: `INV-${String(order.id || '').slice(-8).toUpperCase() || 'N/A'}`,
+    invoiceDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+    opts: { ...opts }
+  };
+}
+
+function renderInvoicePreviewHtml(data) {
+  if (!data) return '<p class="error">No invoice data.</p>';
+  const companyInfo = window.COMPANY || { name: 'Kathmandu Textile', address: 'Kathmandu', phone: 'N/A', email: 'N/A', panVat: '' };
+  const { order, lines, subtotal, discountAmount, vatAmount, grandTotal, invoiceNo, invoiceDate, opts } = data;
+  const sig = opts?.sig || 'Authorised';
+  const rows = lines.map(l => `<tr><td>${escapeHtml(l.productName)}</td><td>${escapeHtml(l.barcode)}</td><td>${l.quantity}</td><td>${escapeHtml(l.unit)}</td><td>Rs. ${Number(l.rate).toFixed(2)}</td><td>Rs. ${Number(l.lineTotal).toFixed(2)}</td></tr>`).join('');
+  let extraRows = '';
+  if (discountAmount > 0) extraRows += `<tr><td colspan="5" style="text-align:right;color:#94a3b8;">Discount (${opts.discountPercent || 0}%)</td><td>Rs. -${Number(discountAmount).toFixed(2)}</td></tr>`;
+  if (vatAmount > 0) extraRows += `<tr><td colspan="5" style="text-align:right;color:#94a3b8;">VAT (${opts.vatPercent || 0}%)</td><td>Rs. ${Number(vatAmount).toFixed(2)}</td></tr>`;
+  return `<div class="invoice-preview-doc" style="background:linear-gradient(180deg,rgba(15,23,42,0.95) 0%,rgba(7,11,21,0.98) 100%);padding:1.5rem;border-radius:12px;border:1px solid rgba(255,255,255,0.08);">
+    <div style="display:flex;justify-content:space-between;margin-bottom:1.5rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:1rem;">
+      <div><div style="font-size:1.1rem;font-weight:700;color:#f0f4ff;">${escapeHtml(companyInfo.name)}</div><div style="font-size:0.8rem;color:#94a3b8;">${escapeHtml(companyInfo.address)}</div></div>
+      <div style="text-align:right;"><div style="font-size:1rem;font-weight:600;color:#f59e0b;">INVOICE</div><div style="font-size:0.8rem;color:#94a3b8;">Date: ${invoiceDate}</div><div style="font-size:0.8rem;color:#94a3b8;">Invoice No: ${invoiceNo}</div></div>
+    </div>
+    <div style="margin-bottom:1rem;"><div style="font-size:0.9rem;font-weight:600;color:#f0f4ff;">Supplier: ${escapeHtml(order.supplierName || '—')}</div><div style="font-size:0.8rem;color:#94a3b8;">Contact: ${escapeHtml(order.supplierContact || '—')} | Delivery: ${escapeHtml(order.deliveryAddress || order.supplierAddress || '—')}</div></div>
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+      <thead><tr style="background:rgba(245,158,11,0.15);color:#fbbf24;"><th style="padding:8px;text-align:left;">Product</th><th>Barcode</th><th>Qty</th><th>Unit</th><th style="text-align:right;">Rate</th><th style="text-align:right;">Amount</th></tr></thead>
+      <tbody style="color:#e2e8f0;">${rows}${extraRows}</tbody>
+    </table>
+    <div style="margin-top:1rem;text-align:right;"><div style="font-size:0.85rem;color:#94a3b8;">Subtotal: Rs. ${Number(subtotal).toFixed(2)}</div>${discountAmount > 0 ? `<div>Discount: Rs. -${Number(discountAmount).toFixed(2)}</div>` : ''}${vatAmount > 0 ? `<div>VAT: Rs. ${Number(vatAmount).toFixed(2)}</div>` : ''}<div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">Grand Total: Rs. ${Number(grandTotal).toFixed(2)}</div></div>
+    <div style="margin-top:1rem;"><div style="font-size:0.7rem;color:#64748b;">Authorised Signature</div><div style="font-family:cursive;">${escapeHtml(sig)}</div></div>
+  </div>`;
+}
+
+async function previewOrderInvoice(orderId, opts = {}) {
+  if (!invoicePreviewBody || !invoicePreviewModal) return;
+  try {
+    showToast('Loading invoice…', 'info');
+    lastPreviewOrderId = orderId;
+    const discToggle = document.getElementById('preview-discount-toggle');
+    const vatToggle = document.getElementById('preview-vat-toggle');
+    if (discToggle) { discToggle.checked = false; }
+    if (vatToggle) { vatToggle.checked = false; }
+    const discField = document.getElementById('preview-discount-field');
+    const vatField = document.getElementById('preview-vat-field');
+    if (discField) discField.style.display = 'none';
+    if (vatField) vatField.style.display = 'none';
+    const discInput = document.getElementById('preview-discount-percent');
+    const vatInput = document.getElementById('preview-vat-percent');
+    if (discInput) discInput.value = '';
+    if (vatInput) vatInput.value = '13';
+
+    const data = await getInvoiceData(orderId, opts);
+    if (!data || data.lines.length === 0) {
+      showToast('No products in order.', 'error');
+      return;
+    }
+    invoicePreviewBody.innerHTML = renderInvoicePreviewHtml(data);
+    invoicePreviewModal.style.display = 'flex';
+    showToast('Preview ready.', 'success');
+  } catch (err) {
+    console.error('Preview invoice error:', err);
+    showToast('Failed: ' + (err.message || ''), 'error');
+    invoicePreviewBody.innerHTML = `<p class="error">Failed: ${escapeHtml(err.message || '')}</p>`;
+    invoicePreviewModal.style.display = 'flex';
+  }
+}
+
+function applyPreviewDiscountVat() {
+  if (!lastPreviewOrderId || !invoicePreviewBody) return;
+  const opts = getPreviewDiscountVatOpts();
+  getInvoiceData(lastPreviewOrderId, opts).then(data => {
+    if (data) {
+      invoicePreviewBody.innerHTML = renderInvoicePreviewHtml(data);
+      showToast('Discount/VAT applied.', 'success');
+    }
+  });
+}
+
+async function printOrderInvoice(orderId, opts = {}) {
+  try {
+    showToast('Generating PDF…', 'info');
+    const data = await getInvoiceData(orderId, opts);
+    if (!data) { showToast('Order not found.', 'error'); return; }
+    if (typeof window.jspdf === 'undefined') { showToast('PDF library not loaded.', 'error'); return; }
+    const pdfDoc = await generateOrderInvoicePDF({ ...data, authorisedSignature: opts?.sig || 'Authorised' });
+    const safeName = (data.order.supplierName || 'Order').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    pdfDoc.save(`Invoice_${safeName}_${data.invoiceNo}.pdf`);
+    showToast('Invoice PDF downloaded.', 'success');
+  } catch (err) {
+    console.error('Print invoice error:', err);
+    showToast('Failed: ' + (err.message || ''), 'error');
+  }
+}
+
+async function generateOrderInvoicePDF(data) {
+  const companyInfo = window.COMPANY || { name: 'Kathmandu Textile', address: 'Kathmandu', phone: 'N/A', email: 'N/A', panVat: '' };
+  const { jsPDF } = window.jspdf;
+  const pdfDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW = pdfDoc.internal.pageSize.getWidth();
+  const pageH = pdfDoc.internal.pageSize.getHeight();
+  let y = 14;
+  pdfDoc.setFontSize(12);
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.text(companyInfo.name || 'Kathmandu Textile', 14, y); y += 5;
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(8);
+  pdfDoc.text(companyInfo.address || 'Kathmandu', 14, y); y += 4;
+  pdfDoc.text(`Phone: ${companyInfo.phone} | Email: ${companyInfo.email}`, 14, y); y += 6;
+  pdfDoc.text('Invoice', pageW - 14, 14, { align: 'right' });
+  pdfDoc.text(`Date: ${data.invoiceDate}`, pageW - 14, 19, { align: 'right' });
+  pdfDoc.text(`Invoice No: ${data.invoiceNo}`, pageW - 14, 24, { align: 'right' });
+  y += 2;
+  pdfDoc.setFontSize(11);
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.text('ORDER INVOICE', pageW / 2, y, { align: 'center' });
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(9);
+  y += 10;
+  const order = data.order;
+  pdfDoc.text(`Supplier: ${order.supplierName || '—'}`, 14, y); y += 5;
+  pdfDoc.text(`Contact: ${order.supplierContact || '—'}`, 14, y); y += 5;
+  pdfDoc.text(`Delivery: ${order.deliveryAddress || order.supplierAddress || '—'}`, 14, y); y += 1;
+  const tableBody = data.lines.map(l => [l.productName, l.barcode, String(l.quantity), l.unit, `Rs. ${Number(l.rate).toFixed(2)}`, `Rs. ${Number(l.lineTotal).toFixed(2)}`]);
+  if (tableBody.length === 0) tableBody.push(['—', '—', '—', '—', '0.00', '0.00']);
+  pdfDoc.autoTable({ startY: y, head: [['Product', 'Barcode', 'Qty', 'Unit', 'Rate (Rs.)', 'Amount (Rs.)']], body: tableBody, theme: 'grid', margin: { left: 14, right: 14 }, styles: { fontSize: 8 }, headStyles: { fillColor: [245, 158, 11] } });
+  y = pdfDoc.lastAutoTable.finalY + 6;
+  if (data.discountAmount > 0) { pdfDoc.text(`Discount: Rs. -${Number(data.discountAmount).toFixed(2)}`, 14, y); y += 5; }
+  if (data.vatAmount > 0) { pdfDoc.text(`VAT: Rs. ${Number(data.vatAmount).toFixed(2)}`, 14, y); y += 5; }
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.text(`Grand Total: Rs. ${Number(data.grandTotal).toFixed(2)}`, 14, y); y += 14;
+
+  // Authorised signature
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(8);
+  pdfDoc.text('_______________', 14, y);
+  pdfDoc.text('Authorised Signature', 14, y + 4);
+  pdfDoc.setFont('times', 'italic');
+  pdfDoc.setFontSize(10);
+  pdfDoc.text(data.authorisedSignature || 'Authorised', 14, y + 12);
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(8);
+  pdfDoc.text('_______________', pageW / 2 + 20, y);
+  pdfDoc.text('Customer Signature', pageW / 2 + 20, y + 5);
+  y += 22;
+
+  // Footer note
+  pdfDoc.setTextColor(100, 100, 100);
+  pdfDoc.text('Note: System-generated invoice. Prices from selling rates catalog.', 14, y, { maxWidth: pageW - 28 });
+  y += 8;
+
+  // Company stamp (bottom-right)
+  const stampDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const stampW = 45;
+  const stampH = 24;
+  const stampX = pageW - 14 - stampW;
+  const stampY = pageH - 14 - stampH;
+  pdfDoc.setDrawColor(180, 60, 60);
+  pdfDoc.setLineWidth(0.5);
+  pdfDoc.rect(stampX, stampY, stampW, stampH);
+  pdfDoc.setFontSize(5);
+  pdfDoc.setTextColor(120, 40, 40);
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.text('COMPANY STAMP', stampX + stampW / 2, stampY + 6, { align: 'center' });
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.text((companyInfo.name || 'Kathmandu Textile').slice(0, 28), stampX + stampW / 2, stampY + 12, { align: 'center', maxWidth: stampW - 4 });
+  pdfDoc.text(stampDate, stampX + stampW / 2, stampY + 19, { align: 'center' });
+  pdfDoc.setTextColor(0, 0, 0);
+
+  return pdfDoc;
+}
+
+// ── Order delete functions ──
+let deleteOrderId = null;
+const deleteOrderModal = document.getElementById('delete-wage-modal'); // Reuse wage modal (generic)
+const deleteOrderDetails = document.getElementById('delete-wage-details'); // Reuse
+const btnConfirmOrderDelete = document.getElementById('btn-confirm-delete');
+const btnCancelOrderDelete = document.getElementById('btn-cancel-delete');
+const modalCloseOrderDelete = document.getElementById('modal-close-delete');
+
+function openOrderDeleteModal(el) {
+  deleteOrderId = el.dataset.id;
+  const product = el.dataset.product;
+  const supplier = el.dataset.supplier || '—';
+  const qty = el.dataset.qty || '—';
+  const status = el.dataset.status || '—';
+
+  if (deleteOrderDetails) {
+    deleteOrderDetails.innerHTML = `
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;">
+        <span style="color:#94a3b8;">Product:</span><span style="color:#f0f4ff;font-weight:600;">${product}</span>
+        <span style="color:#94a3b8;">Supplier:</span><span style="color:#f0f4ff;">${supplier}</span>
+        <span style="color:#94a3b8;">Qty:</span><span style="color:#f0f4ff;">${qty}</span>
+        <span style="color:#94a3b8;">Status:</span><span style="color:#f0f4ff;">${status}</span>
+      </div>`;
+  }
+
+  document.querySelector('#delete-wage-modal h3').textContent = '🗑️ Delete Order';
+  if (deleteOrderModal) deleteOrderModal.style.display = 'flex';
+}
+
+function closeOrderDeleteModal() {
+  deleteOrderId = null;
+  if (deleteOrderModal) deleteOrderModal.style.display = 'none';
+}
+
+async function confirmDeleteOrder() {
+  if (!deleteOrderId) return;
+
+  const btn = btnConfirmOrderDelete;
+  const originalText = btn.textContent;
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    btn.style.opacity = '0.6';
+
+    await deleteDoc(doc(db, 'orders', deleteOrderId));
+
+    showToast('Order deleted successfully', 'success');
+    closeOrderDeleteModal();
+    loadManagerOrders();
+
+  } catch (err) {
+    console.error('Failed to delete order:', err);
+    showToast('Failed to delete: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+    btn.style.opacity = '1';
+  }
+}
+
+// Event listeners for order delete (reuse wage modal handlers)
+btnConfirmOrderDelete.addEventListener('click', confirmDeleteOrder);
+btnCancelOrderDelete.addEventListener('click', closeOrderDeleteModal);
+modalCloseOrderDelete.addEventListener('click', closeOrderDeleteModal);
+
+// Invoice signature modal
+initInvoiceSignatureModal();
+
+async function deleteOrder(orderId, productName) {
+  openOrderDeleteModal({dataset: {id: orderId, product: productName}});
 }
 
 // Order filter listeners (attach once, after DOM ready)
@@ -751,6 +1287,9 @@ const COMPANY = {
   website: 'kathmandutextile.com'
 };
 
+// Make COMPANY available globally for invoice generation
+window.COMPANY = COMPANY;
+
 const MONTH_TO_NUM = { January: 1, February: 2, March: 3, April: 4, May: 5, June: 6, July: 7, August: 8, September: 9, October: 10, November: 11, December: 12 };
 
 async function getSlipData(empId, month, year) {
@@ -818,7 +1357,7 @@ function renderPayslipPreview(data) {
   const payPeriod = getPayPeriod(month, year);
   const paymentMethod = hasBank ? 'Bank' : 'Cash';
   const paymentDetail = hasBank
-    ? `Bank: ${escapeHtml(emp.bankName || '—')}<br>Account No: ${escapeHtml(emp.bankAccountNumber || '—')}`
+    ? `Bank: ${emp.bankName || '—'}<br>Account No: ${emp.bankAccountNumber || '—'}`
     : '—';
   let earningsRows = '';
   for (const { department, amount } of deptEarnings) {
@@ -895,46 +1434,46 @@ function renderPayslipPreview(data) {
 
 async function generatePayslipPDF(data) {
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
+  const pdfDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW = pdfDoc.internal.pageSize.getWidth();
   let y = 14;
 
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text(COMPANY.name, 14, y); y += 5;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(COMPANY.address, 14, y); y += 4;
-  doc.text(`Phone: ${COMPANY.phone} | Email: ${COMPANY.email}`, 14, y); y += 4;
-  doc.text(COMPANY.panVat, 14, y); y += 6;
+  pdfDoc.setFontSize(12);
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.text(COMPANY.name || 'Kathmandu Textile', 14, y); y += 5;
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(8);
+  pdfDoc.text(COMPANY.address || 'Kathmandu, Nepal', 14, y); y += 4;
+  pdfDoc.text(`Phone: ${COMPANY.phone || 'N/A'} | Email: ${COMPANY.email || 'N/A'}`, 14, y); y += 4;
+  pdfDoc.text(COMPANY.panVat || '', 14, y); y += 6;
 
-  doc.text('Payslip', pageW - 14, 14, { align: 'right' });
-  doc.text(`Date: ${getPayslipDate(data.month, data.year)}`, pageW - 14, 19, { align: 'right' });
-  doc.text(`Slip No: ${data.slipNo}`, pageW - 14, 24, { align: 'right' });
+  pdfDoc.text('Payslip', pageW - 14, 14, { align: 'right' });
+  pdfDoc.text(`Date: ${getPayslipDate(data.month, data.year)}`, pageW - 14, 19, { align: 'right' });
+  pdfDoc.text(`Slip No: ${data.slipNo}`, pageW - 14, 24, { align: 'right' });
 
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.text('SALARY PAYSLIP', pageW / 2, 36, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(`For the month of ${data.month} ${data.year}`, pageW / 2, 42, { align: 'center' });
+  pdfDoc.setFontSize(11);
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.text('SALARY PAYSLIP', pageW / 2, 36, { align: 'center' });
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(9);
+  pdfDoc.text(`For the month of ${data.month} ${data.year}`, pageW / 2, 42, { align: 'center' });
   y = 50;
 
   const emp = data.emp;
-  doc.text(`Name: ${emp.fullName || emp.name || '—'}`, 14, y); y += 5;
-  doc.text(`Employee ID: ${emp.id || '—'}`, 14, y); y += 5;
-  doc.text(`Department: ${emp.department || '—'}`, 14, y); y += 5;
-  doc.text(`Designation: ${emp.position || '—'}`, 14, y); y += 5;
-  doc.text(`Pay Period: ${getPayPeriod(data.month, data.year)}`, pageW / 2 + 10, 50);
-  doc.text(`Method of Payment: ${data.hasBank ? 'Bank' : 'Cash'}`, pageW / 2 + 10, 55);
+  pdfDoc.text(`Name: ${emp.fullName || emp.name || '—'}`, 14, y); y += 5;
+  pdfDoc.text(`Employee ID: ${emp.id || '—'}`, 14, y); y += 5;
+  pdfDoc.text(`Department: ${emp.department || '—'}`, 14, y); y += 5;
+  pdfDoc.text(`Designation: ${emp.position || '—'}`, 14, y); y += 5;
+  pdfDoc.text(`Pay Period: ${getPayPeriod(data.month, data.year)}`, pageW / 2 + 10, 50);
+  pdfDoc.text(`Method of Payment: ${data.hasBank ? 'Bank' : 'Cash'}`, pageW / 2 + 10, 55);
   if (data.hasBank) {
-    doc.text(`Bank: ${emp.bankName || '—'} | A/C: ${emp.bankAccountNumber || '—'}`, pageW / 2 + 10, 60);
+    pdfDoc.text(`Bank: ${emp.bankName || '—'} | A/C: ${emp.bankAccountNumber || '—'}`, pageW / 2 + 10, 60);
   }
   y += 10;
 
   const earnBody = data.deptEarnings.map(d => [d.department, Number(d.amount).toFixed(2)]);
   if (earnBody.length === 0) earnBody.push(['—', '0.00']);
-  doc.autoTable({
+  pdfDoc.autoTable({
     startY: y,
     head: [['Earnings - Description', 'Amount (Rs.)']],
     body: earnBody,
@@ -942,8 +1481,8 @@ async function generatePayslipPDF(data) {
     margin: { left: 14 },
     styles: { fontSize: 8 }
   });
-  y = doc.lastAutoTable.finalY + 4;
-  doc.autoTable({
+  y = pdfDoc.lastAutoTable.finalY + 4;
+  pdfDoc.autoTable({
     startY: y,
     head: [['Deductions - Description', 'Amount (Rs.)']],
     body: [['Deductions', Number(data.totalDeductions).toFixed(2)]],
@@ -951,25 +1490,26 @@ async function generatePayslipPDF(data) {
     margin: { left: 14 },
     styles: { fontSize: 8 }
   });
-  y = doc.lastAutoTable.finalY + 8;
+  y = pdfDoc.lastAutoTable.finalY + 8;
 
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Total Earnings: ${Number(data.totalEarnings).toFixed(2)}`, 14, y); y += 6;
-  doc.text(`Total Deductions: ${Number(data.totalDeductions).toFixed(2)}`, 14, y); y += 6;
-  doc.text(`Net Pay (Rs.): ${Number(data.totalNet).toFixed(2)}`, 14, y);
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.setFontSize(12);
+  pdfDoc.text(`Total Earnings: ${Number(data.totalEarnings).toFixed(2)}`, 14, y); y += 6;
+  pdfDoc.text(`Total Deductions: ${Number(data.totalDeductions).toFixed(2)}`, 14, y); y += 6;
+  pdfDoc.text(`Net Pay (Rs.): ${Number(data.totalNet).toFixed(2)}`, 14, y);
   y += 14;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('_______________', 14, y);
-  doc.text('Authorised Signature', 14, y + 5);
-  doc.text('_______________', pageW / 2 + 20, y);
-  doc.text('Employee Signature', pageW / 2 + 20, y + 5);
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.setFontSize(8);
+  pdfDoc.text('_______________', 14, y);
+  pdfDoc.text('Authorised Signature', 14, y + 5);
+  pdfDoc.text('_______________', pageW / 2 + 20, y);
+  pdfDoc.text('Customer Signature', pageW / 2 + 20, y + 5);
   y += 18;
 
-  doc.setTextColor(100, 100, 100);
-  doc.text('Note: This is a system-generated payslip based on recorded production, fibre usage, and approved payroll data.', 14, y, { maxWidth: pageW - 28 });
-  return doc;
+  pdfDoc.setTextColor(100, 100, 100);
+  pdfDoc.text('Note: This is a system-generated payslip based on recorded production, fibre usage, and approved payroll data.', 14, y, { maxWidth: pageW - 28 });
+  return pdfDoc;
 }
 
 async function showSlipPreview() {
@@ -998,9 +1538,9 @@ async function downloadSlipPDF() {
   try {
     const data = await getSlipData(empId, month, year);
     if (!data || data.entries.length === 0) { showToast('No wage data for selected period.', 'error'); return; }
-    const doc = await generatePayslipPDF(data);
+    const pdfDoc = await generatePayslipPDF(data);
     const name = (data.emp.fullName || data.emp.name || 'Employee').replace(/\s+/g, '_');
-    doc.save(`Payslip_${name}_${month}_${year}.pdf`);
+    pdfDoc.save(`Payslip_${name}_${month}_${year}.pdf`);
     showToast('PDF downloaded.');
   } catch (err) {
     console.error(err);
