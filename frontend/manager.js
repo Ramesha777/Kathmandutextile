@@ -58,19 +58,10 @@ const btnCancelShare = document.getElementById('btn-cancel-share');
 const modalCloseShare = document.getElementById('modal-close-share');
 const managerInventoryListEl = document.getElementById('managerInventoryList');
 const managerInventoryCategoryFilterEl = document.getElementById('managerInventoryCategoryFilter');
-const btnInventoryExportCsv = document.getElementById('btn-inventory-export-csv');
 const managerDamageReportsListEl = document.getElementById('managerDamageReportsList');
 const managerOrdersListEl = document.getElementById('managerOrdersList');
 const orderSearchQueryEl = document.getElementById('orderSearchQuery');
 const orderStatusFilterEl = document.getElementById('orderStatusFilter');
-const btnOrdersExportCsv = document.getElementById('btn-orders-export-csv');
-const wageSearchInput = document.getElementById('wage-search');
-const wageDateFrom = document.getElementById('wage-date-from');
-const wageDateTo = document.getElementById('wage-date-to');
-const btnWageFilter = document.getElementById('btn-wage-filter');
-const btnWageExportCsv = document.getElementById('btn-wage-export-csv');
-
-let allWageEntries = [];
 
 let deleteDamageId = null;
 const deleteDamageModal = document.getElementById('delete-damage-modal');
@@ -94,8 +85,6 @@ const btnCancelInventoryDelete = document.getElementById('btn-cancel-inventory-d
 const modalCloseInventoryDelete = document.getElementById('modal-close-inventory-delete');
 
 let managerInventoryItems = [];
-let managerOrdersAll = [];
-let managerOrdersRatesMap = {};
 let managerUserNameByUid = {};
 
 // Employee search elements
@@ -423,6 +412,7 @@ function populateWageItemSelect() {
   items.forEach(it => {
     const opt = document.createElement('option');
     opt.value = it.name;
+    opt.textContent = it.name;
     opt.dataset.rate = String(it.rate);
     opt.dataset.unit = it.unit;
     selItem.appendChild(opt);
@@ -441,6 +431,10 @@ function onWageItemChange() {
     inpRate.value = '';
   }
 }
+
+// Wage form: department change loads work items; item change auto-fills rate
+if (selDept) selDept.addEventListener('change', populateWageItemSelect);
+if (selItem) selItem.addEventListener('change', onWageItemChange);
 
 // Sync employee id from datalist selection
 function onWageEmployeeInput() {
@@ -598,46 +592,6 @@ function renderManagerInventory() {
   });
 }
 
-function getFilteredInventoryItems() {
-  const cat = managerInventoryCategoryFilterEl?.value || '';
-  return cat ? managerInventoryItems.filter(x => String(x.category || '').trim() === cat) : managerInventoryItems;
-}
-
-function exportInventoryCSV() {
-  const items = getFilteredInventoryItems();
-  if (!items.length) {
-    showToast('No inventory items to export.', 'error');
-    return;
-  }
-  const headers = ['Barcode/ID', 'Name', 'Category', 'Qty', 'Unit', 'Vendor', 'Storage'];
-  const rows = items.map(x => [
-    x.barcode || '',
-    x.name || '',
-    x.category || '',
-    x.quantity != null ? x.quantity : '',
-    x.unit || x.units || '',
-    x.vendorName || '',
-    x.storageArea || ''
-  ]);
-  const esc = v => {
-    const s = String(v ?? '');
-    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `inventory_${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('CSV exported successfully.', 'success');
-}
-
-if (btnInventoryExportCsv) btnInventoryExportCsv.addEventListener('click', exportInventoryCSV);
-
 // Load manager damage reports (problem_reports)
 async function loadManagerDamageReports() {
   if (!managerDamageReportsListEl) return;
@@ -702,9 +656,8 @@ async function loadManagerOrders() {
   managerOrdersListEl.innerHTML = '<p class="loading-msg">Loading orders…</p>';
   try {
     const snap = await getDocs(collection(db, 'orders'));
-    managerOrdersAll = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    managerOrdersAll.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-    let items = [...managerOrdersAll];
+    let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    items.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
 
     // Load selling rates for price display
     const ratesSnap = await getDocs(collection(db, 'rates_selling'));
@@ -722,7 +675,6 @@ async function loadManagerOrders() {
         if (!ratesMap[keyNameOnly]) ratesMap[keyNameOnly] = Number(r.sellingPrice ?? r.rate ?? 0);
       }
     });
-    managerOrdersRatesMap = ratesMap;
 
     const search = (orderSearchQueryEl?.value || '').toLowerCase().trim();
     const statusFilter = orderStatusFilterEl?.value || '';
@@ -860,80 +812,6 @@ async function loadManagerOrders() {
     managerOrdersListEl.innerHTML = '<p class="error">Failed to load orders: ' + escapeHtml(err.message || err) + '</p>';
   }
 }
-
-function getFilteredManagerOrders() {
-  let items = [...managerOrdersAll];
-  const search = (orderSearchQueryEl?.value || '').toLowerCase().trim();
-  const statusFilter = orderStatusFilterEl?.value || '';
-  if (search) {
-    items = items.filter(o =>
-      (String(o.supplierContact || '')).toLowerCase().includes(search) ||
-      (String(o.supplierName || '')).toLowerCase().includes(search) ||
-      (String(o.productName || '')).toLowerCase().includes(search)
-    );
-  }
-  if (statusFilter) {
-    items = items.filter(o => (String(o.status || '')).toLowerCase() === statusFilter.toLowerCase());
-  }
-  return items;
-}
-
-function exportOrdersCSV() {
-  const items = getFilteredManagerOrders();
-  if (!items.length) {
-    showToast('No orders to export.', 'error');
-    return;
-  }
-  const ratesMap = managerOrdersRatesMap || {};
-  const headers = ['Products', 'Supplier', 'Contact', 'Address', 'Delivery', 'Est. Total', 'Notes', 'Status'];
-  const rows = items.map(o => {
-    let productsArray = [];
-    if (Array.isArray(o.products) && o.products.length > 0) {
-      productsArray = o.products;
-    } else if (o.productName) {
-      productsArray = [{ productName: o.productName, quantity: o.quantity, unit: o.unit }];
-    }
-    const productSummary = productsArray.map(p => `${p.productName || '—'} (×${p.quantity ?? '?'})`).join('; ');
-    let orderTotal = 0;
-    for (const p of productsArray) {
-      const name = p.productName || p.name || '—';
-      const unit = p.unit || '—';
-      const qty = Number(p.quantity) || 0;
-      const keyFull = normalizeForMatch(name) + '||' + normalizeForMatch(unit);
-      const keyName = normalizeForMatch(name);
-      const rate = ratesMap[keyFull] ?? ratesMap[keyName] ?? 0;
-      orderTotal += qty * rate;
-    }
-    const totalStr = orderTotal > 0 ? orderTotal.toFixed(2) : '';
-    return [
-      productSummary,
-      o.supplierName || '',
-      o.supplierContact || '',
-      o.supplierAddress || o.deliveryAddress || '',
-      o.deliveryDate || '',
-      totalStr,
-      o.notes || '',
-      (o.status || 'pending').toLowerCase()
-    ];
-  });
-  const esc = v => {
-    const s = String(v ?? '');
-    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `orders_${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('CSV exported successfully.', 'success');
-}
-
-if (btnOrdersExportCsv) btnOrdersExportCsv.addEventListener('click', exportOrdersCSV);
 
 async function updateOrderStatus(orderId, status) {
   try {
@@ -1234,7 +1112,7 @@ async function generateOrderInvoicePDF(data) {
   pdfDoc.setFontSize(5);
   pdfDoc.setTextColor(120, 40, 40);
   pdfDoc.setFont('helvetica', 'bold');
-  pdfDoc.text('COMPANY STAMP', stampX + stampW / 2, stampY + 20, { align: 'center' });
+  pdfDoc.text('COMPANY STAMP', stampX + stampW / 2, stampY + 6, { align: 'center' });
   pdfDoc.setFont('helvetica', 'normal');
   pdfDoc.text((companyInfo.name || 'Kathmandu Textile').slice(0, 28), stampX + stampW / 2, stampY + 12, { align: 'center', maxWidth: stampW - 4 });
   pdfDoc.text(stampDate, stampX + stampW / 2, stampY + 19, { align: 'center' });
@@ -1419,7 +1297,8 @@ const COMPANY = {
   email: 'info@ktt.com',
   panVat: 'PAN/VAT: 123456789',
   location: 'Tarakeshwar-7, Kathmandu',
-  website: 'kathmandutextile.com'
+  website: 'kathmandutextile.com',
+  authorisedSignature: 'Authorised Signatory'
 };
 
 // Make COMPANY available globally for invoice generation
@@ -1560,8 +1439,16 @@ function renderPayslipPreview(data) {
         <div class="payslip-summary-row payslip-net"><span>Net Pay (Rs.):</span><span>${Number(totalNet).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
       </div>
       <div class="payslip-signature-row">
-        <div class="payslip-sig-box"><div class="payslip-sig-line"></div><div class="payslip-sig-label">Authorised Signature</div></div>
-        <div class="payslip-sig-box"><div class="payslip-sig-line"></div><div class="payslip-sig-label">Employee Signature</div></div>
+        <div class="payslip-sig-box">
+          <div class="payslip-sig-name" style="font-style:italic;font-size:0.85rem;margin-bottom:4px;">${escapeHtml(COMPANY.authorisedSignature || 'Authorised Signatory')}</div>
+          <div class="payslip-sig-line"></div>
+          <div class="payslip-sig-label">Authorised Signature</div>
+        </div>
+        <div class="payslip-sig-box payslip-stamp-box" style="border:1.5px solid #a03030;border-radius:4px;padding:6px 8px;min-width:100px;">
+          <div style="font-size:0.6rem;font-weight:700;color:#782020;text-align:center;letter-spacing:0.5px;">COMPANY STAMP</div>
+          <div style="font-size:0.6rem;color:#782020;text-align:center;margin:2px 0;">${escapeHtml((COMPANY.name || 'KTT').slice(0, 26))}</div>
+          <div style="font-size:0.55rem;color:#782020;text-align:center;">${payDate}</div>
+        </div>
       </div>
       <div class="payslip-disclaimer">Note: This is a system-generated payslip based on recorded production, fibre usage, and approved payroll data.</div>
     </div>`;
@@ -1636,18 +1523,46 @@ async function generatePayslipPDF(data) {
   pdfDoc.text(`Total Earnings: ${Number(data.totalEarnings).toFixed(2)}`, 14, y); y += 6;
   pdfDoc.text(`Total Deductions: ${Number(data.totalDeductions).toFixed(2)}`, 14, y); y += 6;
   pdfDoc.text(`Net Pay (Rs.): ${Number(data.totalNet).toFixed(2)}`, 14, y);
-  y += 14;
+  y += 16;
 
+  // Signature area (left)
+  const sigName = COMPANY.authorisedSignature || 'Authorised Signatory';
+  pdfDoc.setFont('times', 'italic');
+  pdfDoc.setFontSize(9);
+  pdfDoc.text(sigName, 14, y);
   pdfDoc.setFont('helvetica', 'normal');
   pdfDoc.setFontSize(8);
-  pdfDoc.text('_______________', 14, y);
-  pdfDoc.text('Authorised Signature', 14, y + 5);
-  pdfDoc.text('_______________', pageW / 2 + 20, y);
-  pdfDoc.text('Customer Signature', pageW / 2 + 20, y + 5);
-  y += 18;
+  pdfDoc.setDrawColor(80, 80, 80);
+  pdfDoc.setLineWidth(0.2);
+  pdfDoc.line(14, y + 4, 14 + 45, y + 4);
+  pdfDoc.text('Authorised Signature', 14, y + 10);
+
+  // Company stamp box (right)
+  const pageH = pdfDoc.internal.pageSize.getHeight();
+  const stampW = 42;
+  const stampH = 22;
+  const stampX = pageW - 14 - stampW;
+  const stampY = y - 4;
+  const stampDate = getPayslipDate(data.month, data.year);
+  pdfDoc.setDrawColor(160, 50, 50);
+  pdfDoc.setLineWidth(0.5);
+  pdfDoc.rect(stampX, stampY, stampW, stampH);
+  pdfDoc.setFontSize(5);
+  pdfDoc.setTextColor(120, 40, 40);
+  pdfDoc.setFont('helvetica', 'bold');
+  pdfDoc.text('COMPANY STAMP', stampX + stampW / 2, stampY + 5, { align: 'center' });
+  pdfDoc.setFont('helvetica', 'normal');
+  pdfDoc.text((COMPANY.name || 'KTT').slice(0, 26), stampX + stampW / 2, stampY + 11, { align: 'center', maxWidth: stampW - 4 });
+  pdfDoc.text(stampDate, stampX + stampW / 2, stampY + 17, { align: 'center' });
+  pdfDoc.setTextColor(0, 0, 0);
+  pdfDoc.setFontSize(8);
+
+  y += 24;
 
   pdfDoc.setTextColor(100, 100, 100);
   pdfDoc.text('Note: This is a system-generated payslip based on recorded production, fibre usage, and approved payroll data.', 14, y, { maxWidth: pageW - 28 });
+
+  pdfDoc.text('Note: Deduciton is from Employee Provident, advance payment, CTZ, insurance etc.', 14, y + 5, { maxWidth: pageW - 28 });
   return pdfDoc;
 }
 
@@ -1762,100 +1677,32 @@ async function loadWageEntries() {
   if (!tblWageEntriesBody) return;
   try {
     const snap = await getDocs(collection(db, 'wageEntries'));
-    allWageEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    allWageEntries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    renderWageEntriesFiltered();
+    const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    tblWageEntriesBody.innerHTML = '';
+    if (!entries.length) {
+      tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#94a3b8;padding:1.5rem;">No wage entries found.</td></tr>';
+      return;
+    }
+    entries.forEach(w => {
+      const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(w.date || '—')}</td><td>${escapeHtml(empName)}</td><td>${escapeHtml(w.employeeId || '—')}</td>
+        <td>${escapeHtml(w.department || '—')}</td><td>${escapeHtml(w.item || '—')}</td><td>${w.qty || 0}</td>
+        <td>${escapeHtml(w.unit || '—')}</td><td>${w.rate || 0}</td><td>${w.ot || 0}</td><td>${w.bonus || 0}</td>
+        <td>${w.deduct || 0}</td><td><strong style="color:#f59e0b">Rs. ${(w.net || 0).toLocaleString()}</strong></td>
+        <td><button class="btn-delete-wage" data-id="${w.id}" data-emp="${escapeHtml(empName)}" data-date="${escapeHtml(w.date || '—')}" data-item="${escapeHtml(w.item || '—')}" data-qty="${w.qty || 0}" data-net="${w.net || 0}" title="Delete">🗑️</button></td>`;
+      tblWageEntriesBody.appendChild(tr);
+    });
+    tblWageEntriesBody.querySelectorAll('.btn-delete-wage').forEach(btn => {
+      btn.addEventListener('click', () => openDeleteWageModal(btn));
+    });
   } catch (err) {
     console.error('Failed to load wage entries:', err);
-    allWageEntries = [];
     tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#ef4444;">Failed to load wage entries.</td></tr>';
   }
 }
-
-function getFilteredWageEntries() {
-  const searchTerm = (wageSearchInput?.value || '').trim().toLowerCase();
-  const dateFrom = wageDateFrom?.value || '';
-  const dateTo = wageDateTo?.value || '';
-  return allWageEntries.filter(w => {
-    const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '';
-    const empId = (w.employeeId || '').toString().toLowerCase();
-    const nameMatch = !searchTerm || empName.toLowerCase().includes(searchTerm) || empId.includes(searchTerm);
-    const wDate = w.date || '';
-    const dateMatch = (!dateFrom || wDate >= dateFrom) && (!dateTo || wDate <= dateTo);
-    return nameMatch && dateMatch;
-  });
-}
-
-function renderWageEntriesFiltered() {
-  if (!tblWageEntriesBody) return;
-  const entries = getFilteredWageEntries();
-  tblWageEntriesBody.innerHTML = '';
-  if (!entries.length) {
-    tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#94a3b8;padding:1.5rem;">No wage entries found.</td></tr>';
-    return;
-  }
-  entries.forEach(w => {
-    const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeHtml(w.date || '—')}</td><td>${escapeHtml(empName)}</td><td>${escapeHtml(w.employeeId || '—')}</td>
-      <td>${escapeHtml(w.department || '—')}</td><td>${escapeHtml(w.item || '—')}</td><td>${w.qty || 0}</td>
-      <td>${escapeHtml(w.unit || '—')}</td><td>${w.rate || 0}</td><td>${w.ot || 0}</td><td>${w.bonus || 0}</td>
-      <td>${w.deduct || 0}</td><td><strong style="color:#f59e0b">Rs. ${(w.net || 0).toLocaleString()}</strong></td>
-      <td><button class="btn-delete-wage" data-id="${w.id}" data-emp="${escapeHtml(empName)}" data-date="${escapeHtml(w.date || '—')}" data-item="${escapeHtml(w.item || '—')}" data-qty="${w.qty || 0}" data-net="${w.net || 0}" title="Delete">🗑️</button></td>`;
-    tblWageEntriesBody.appendChild(tr);
-  });
-  tblWageEntriesBody.querySelectorAll('.btn-delete-wage').forEach(btn => {
-    btn.addEventListener('click', () => openDeleteWageModal(btn));
-  });
-}
-
-function exportWageEntriesCSV() {
-  const entries = getFilteredWageEntries();
-  if (!entries.length) {
-    showToast('No wage entries to export.', 'error');
-    return;
-  }
-  const headers = ['Date', 'Employee', 'Emp ID', 'Department', 'Item', 'Qty', 'Unit', 'Rate', 'OT', 'Bonus', 'Deduct', 'Net Wage'];
-  const rows = entries.map(w => {
-    const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
-    return [
-      w.date || '',
-      empName,
-      w.employeeId || '',
-      w.department || '',
-      w.item || '',
-      w.qty ?? '',
-      w.unit || '',
-      w.rate ?? '',
-      w.ot ?? '',
-      w.bonus ?? '',
-      w.deduct ?? '',
-      w.net ?? ''
-    ];
-  });
-  const esc = v => {
-    const s = String(v ?? '');
-    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `wage_entries_${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('CSV exported successfully.', 'success');
-}
-
-if (wageSearchInput) wageSearchInput.addEventListener('input', renderWageEntriesFiltered);
-if (btnWageFilter) btnWageFilter.addEventListener('click', renderWageEntriesFiltered);
-if (wageDateFrom) wageDateFrom.addEventListener('change', renderWageEntriesFiltered);
-if (wageDateTo) wageDateTo.addEventListener('change', renderWageEntriesFiltered);
-if (btnWageExportCsv) btnWageExportCsv.addEventListener('click', exportWageEntriesCSV);
 
 if (btnPreviewSlip) {
   btnPreviewSlip.addEventListener('click', async () => {
