@@ -2,61 +2,103 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAdmin() {
-      return request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    // ─── Helper functions ───
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    // Users collection: own document or admin can read/write any user
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated()
+        && getUserRole() == 'admin';
+    }
+
+    function isManager() {
+      return isAuthenticated()
+        && getUserRole() == 'Manager';
+    }
+
+    function isManagerOrAdmin() {
+      return isAuthenticated()
+        && getUserRole() in ['Manager', 'admin'];
+    }
+
+    // ─── users ───
+    // Own document: read/write. Admin: read/write any.
     match /users/{userId} {
-      allow read, write: if request.auth != null
+      allow read, write: if isAuthenticated()
         && (request.auth.uid == userId || isAdmin());
     }
 
-    // Payment rates: admin only
+    // ─── employees ───
+    // Admin: full access. Manager: read only (wage entry, payslips, holiday).
+    match /employees/{id} {
+      allow read: if isAuthenticated() && (isManager() || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─── Payment rates (Admin write; Manager read for wage form, orders) ───
     match /rates_machineOperators/{id} {
-      allow read, write: if request.auth != null && isAdmin();
+      allow read: if isAuthenticated() && (isManager() || isAdmin());
+      allow create, update, delete: if isAdmin();
     }
     match /rates_productions/{id} {
-      allow read, write: if request.auth != null && isAdmin();
+      allow read: if isAuthenticated() && (isManager() || isAdmin());
+      allow create, update, delete: if isAdmin();
     }
     match /rates_daily/{id} {
-      allow read, write: if request.auth != null && isAdmin();
+      allow read: if isAuthenticated() && (isManager() || isAdmin());
+      allow create, update, delete: if isAdmin();
     }
     match /rates_selling/{id} {
-      allow read, write: if request.auth != null && isAdmin();
+      allow read: if isAuthenticated() && (isManager() || isAdmin());
+      allow create, update, delete: if isAdmin();
     }
 
-    // Inventory: authenticated users can create and read
+    // ─── inventory ───
+    // Employee: create (add), read. Manager/Admin: update, delete.
     match /inventory/{id} {
-      allow read, create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow read, create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
     }
 
-    // Problem reports: authenticated users can create and read
+    // ─── problem_reports (damage reports) ───
+    // Employee: create, read. Manager/Admin: update, delete.
     match /problem_reports/{id} {
-      allow read, create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow read, create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
     }
 
-    // Employees (staff info only): admin only
-    match /employees/{id} {
-      allow read, write: if request.auth != null && isAdmin();
+    // ─── holidays ───
+    // Manager + Admin: read, create, update. Admin only: delete.
+    match /holidays/{holidayId} {
+      allow read, create, update: if isManagerOrAdmin();
+      allow delete: if isAdmin();
     }
 
-    // Orders: employee create own pending, Manager read/write all, admin full access
+    // ─── orders ───
+    // Employee: create own pending. All auth: read. Manager/Admin: update. Admin: delete.
     match /orders/{orderId} {
-      allow create: if request.auth != null 
+      allow create: if isAuthenticated()
         && request.resource.data.status == 'pending'
         && request.resource.data.employeeId == request.auth.uid;
-      
-      allow read: if request.auth != null;
-      
-      allow update: if request.auth != null 
-        && (resource.data.employeeId == request.auth.uid 
-            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['Manager', 'admin']);
-      
-      allow delete: if request.auth != null && isAdmin();
+
+      allow read: if isAuthenticated();
+
+      allow update: if isAuthenticated()
+        && (resource.data.employeeId == request.auth.uid
+            || isManagerOrAdmin());
+
+      allow delete: if isAdmin();
+    }
+
+    // ─── wageEntries ───
+    // Manager + Admin: read, create, delete (for wage entry, payslips, performance).
+    match /wageEntries/{id} {
+      allow read, create, update, delete: if isManagerOrAdmin();
     }
   }
 }

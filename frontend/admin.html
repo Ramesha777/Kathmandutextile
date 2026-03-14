@@ -44,6 +44,8 @@
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="payment-rates"> 💵 Payment Rates</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="production-log">📝 Production Log</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="performance">📊 Performance</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="holidays">🏖️ Employees on Holiday</a></li>
+          <li><a href="Manager.html#holiday" class="admin-nav-link" style="text-decoration:none;">Manage Holidays</a></li>
         </ul>
       </nav>
 
@@ -440,6 +442,43 @@
         <section id="panel-performance" class="admin-panel">
           <div class="page-container" style="padding:0; height:100%; min-height:calc(100vh - 120px);">
             <iframe src="performance.html" title="Employee Performance" class="admin-performance-iframe"></iframe>
+          </div>
+        </section>
+
+        <!-- Employees on Holiday: Admin view of all holiday data -->
+        <section id="panel-holidays" class="admin-panel">
+          <div class="page-container">
+            <h2>Employees on Holiday</h2>
+            <p class="admin-desc">View all employees currently on or scheduled for holiday.</p>
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:1rem;">
+              <select id="admin-holiday-filter-employee" style="min-width:200px;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                <option value="">All employees</option>
+              </select>
+              <select id="admin-holiday-filter-status" style="min-width:140px;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                <option value="">All statuses</option>
+                <option value="pending" style="width: auto;">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <button type="button" id="admin-holiday-refresh" class="btn btn-primary" style="padding:0.5rem 1rem;">Refresh</button>
+            </div>
+            <div id="admin-holidays-list" style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.2);">
+              <p style="padding:2rem;text-align:center;color:#64748b;">Loading holiday data…</p>
+            </div>
+            <div id="admin-holiday-extend-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center;">
+              <div style="background:var(--navy-800, #111827);border-radius:12px;padding:1.5rem;min-width:320px;border:1px solid rgba(255,255,255,0.1);">
+                <h4 style="margin:0 0 1rem;color:#f0f4ff;">Extend Holiday</h4>
+                <p id="admin-extend-holiday-desc" style="color:#94a3b8;font-size:0.9rem;margin-bottom:1rem;"></p>
+                <div class="form-group" style="margin-bottom:1rem;">
+                  <label for="admin-extend-new-date">New end date</label>
+                  <input type="date" id="admin-extend-new-date" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                  <button type="button" id="admin-extend-cancel" class="btn btn-outline">Cancel</button>
+                  <button type="button" id="admin-extend-confirm" class="btn btn-primary">Extend</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
         </div>

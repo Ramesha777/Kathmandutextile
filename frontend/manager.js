@@ -1,4 +1,5 @@
 // manager.js
+import { loadHolidayPanel } from "./manageholiday.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
@@ -40,6 +41,7 @@ const inpRate = document.getElementById('wage-rate');
 const inpOT = document.getElementById('wage-ot');
 const inpBonus = document.getElementById('wage-bonus');
 const inpDeduct = document.getElementById('wage-deduct');
+const inpTax = document.getElementById('wage-tax');
 const btnSave = document.getElementById('btn-save-wage');
 const btnClear = document.getElementById('btn-clear-wage');
 
@@ -143,6 +145,9 @@ navItems.forEach(it => {
     }
     if (section === 'orders') {
       loadManagerOrders();
+    }
+    if (section === 'holiday') {
+      loadHolidayPanel();
     }
     if (section === 'performance') {
       let perfPanel = document.getElementById('panel-performance');
@@ -436,6 +441,94 @@ function onWageItemChange() {
 // Wage form: department change loads work items; item change auto-fills rate
 if (selDept) selDept.addEventListener('change', populateWageItemSelect);
 if (selItem) selItem.addEventListener('change', onWageItemChange);
+if (inpEmployee) inpEmployee.addEventListener('input', onWageEmployeeInput);
+
+// Check if employee is on holiday on given date (YYYY-MM-DD)
+async function isEmployeeOnHolidayOnDate(empId, dateStr, holidaysCache) {
+  let holidays = holidaysCache;
+  if (!holidays) {
+    const snap = await getDocs(collection(db, 'holidays'));
+    holidays = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+  const empHolidays = holidays.filter(h => {
+    if (h.employeeId !== empId) return false;
+    const st = (h.status || "approved").toLowerCase();
+    return st === "approved";
+  });
+  for (const h of empHolidays) {
+    const from = (h.dateFrom || '').trim();
+    const to = (h.dateTo || '').trim();
+    if (from && to && dateStr >= from && dateStr <= to) return true;
+  }
+  return false;
+}
+
+// Save wage entry
+async function saveWageEntry() {
+  const empId = inpEmployeeId?.value?.trim();
+  const dateVal = inpDate?.value?.trim();
+  if (!empId || !dateVal) {
+    showToast('Please select employee and date.', 'error');
+    return;
+  }
+  const isOnHoliday = await isEmployeeOnHolidayOnDate(empId, dateVal);
+  if (isOnHoliday) {
+    const emp = employees.find(e => e.id === empId);
+    const name = emp ? (emp.fullName || emp.name || emp.id) : empId;
+    showToast(`${name} is on holiday on ${dateVal}. Cannot enter wages.`, 'error');
+    return;
+  }
+  const emp = employees.find(e => e.id === empId);
+  const employeeName = emp ? (emp.fullName || emp.name || emp.id) : empId;
+  const department = selDept?.value?.trim() || '';
+  const item = selItem?.value?.trim() || '';
+  const qty = Number(inpQty?.value) || 0;
+  const unit = inpUnit?.value?.trim() || 'piece';
+  const rate = Number(inpRate?.value) || 0;
+  const ot = Number(inpOT?.value) || 0;
+  const bonus = Number(inpBonus?.value) || 0;
+  const deduct = Number(inpDeduct?.value) || 0;
+  const tax = Number(inpTax?.value) || 0;
+  const net = (qty * rate) + (ot * rate) + bonus - deduct - tax;
+  if (!department || !item) {
+    showToast('Please select department and item.', 'error');
+    return;
+  }
+  const originalText = btnSave?.textContent;
+  if (btnSave) { btnSave.disabled = true; btnSave.textContent = 'Saving...'; }
+  try {
+    await addDoc(collection(db, 'wageEntries'), {
+      employeeId: empId, employeeName, date: dateVal, department, item,
+      qty, unit, rate, ot, bonus, deduct, tax, net
+    });
+    showToast('Wage entry saved.', 'success');
+    loadWageEntries();
+    if (btnClear) btnClear.click();
+  } catch (err) {
+    console.error('Save wage failed:', err);
+    showToast('Failed to save: ' + (err.message || err), 'error');
+  } finally {
+    if (btnSave) { btnSave.disabled = false; btnSave.textContent = originalText || 'Save Entry'; }
+  }
+}
+
+function clearWageForm() {
+  if (inpEmployee) inpEmployee.value = '';
+  if (inpEmployeeId) inpEmployeeId.value = '';
+  if (inpDate) inpDate.valueAsDate = new Date();
+  if (selDept) selDept.value = '';
+  populateWageItemSelect();
+  if (inpQty) inpQty.value = '';
+  if (inpUnit) inpUnit.value = 'piece';
+  if (inpRate) inpRate.value = '';
+  if (inpOT) inpOT.value = '0';
+  if (inpBonus) inpBonus.value = '0';
+  if (inpDeduct) inpDeduct.value = '0';
+  if (inpTax) inpTax.value = '0';
+}
+
+if (btnSave) btnSave.addEventListener('click', saveWageEntry);
+if (btnClear) btnClear.addEventListener('click', clearWageForm);
 
 // Sync employee id from datalist selection
 function onWageEmployeeInput() {
@@ -1778,6 +1871,8 @@ async function importWageEntriesCSV(file) {
   try {
     const snap = await getDocs(collection(db, 'wageEntries'));
     allWageEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const holidaysSnap = await getDocs(collection(db, 'holidays'));
+    const holidaysForImport = holidaysSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const text = await new Promise((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result || '');
@@ -1820,6 +1915,11 @@ async function importWageEntriesCSV(file) {
       const net = !isNaN(netFromCsv) && netFromCsv !== 0
         ? netFromCsv
         : (qty * rate) + (ot * rate) + bonus - deduct - tax;
+      const isOnHoliday = await isEmployeeOnHolidayOnDate(empId, date, holidaysForImport);
+      if (isOnHoliday) {
+        skipped++;
+        continue;
+      }
       const entry = { employeeId: empId, employeeName, date, department, item, qty, unit, rate, ot, bonus, deduct, tax, net };
       const key = wageEntryKey(entry);
       if (existingKeys.has(key)) {
@@ -1965,4 +2065,10 @@ function closeShareModal() {
   if (inpDate) inpDate.valueAsDate = new Date();
   // Load wage entries table
   loadWageEntries();
+  // If URL has #holiday, switch to Manage Holiday panel
+  const hash = window.location.hash.slice(1);
+  if (hash === 'holiday') {
+    const link = document.querySelector('.manager-nav-link[data-section="holiday"]');
+    if (link) link.click();
+  }
 })();

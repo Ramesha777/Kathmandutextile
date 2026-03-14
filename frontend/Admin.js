@@ -13,7 +13,9 @@ import {
   setDoc,
   addDoc,
   deleteDoc,
-  getDoc
+  getDoc,
+  updateDoc,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
@@ -743,6 +745,164 @@ function renderTableView(list) {
   });
 }
 
+let adminHolidaysData = [];
+
+async function loadAdminHolidays() {
+  const listEl = document.getElementById("admin-holidays-list");
+  const filterEl = document.getElementById("admin-holiday-filter-employee");
+  if (!listEl) return;
+  listEl.innerHTML = "<p style='padding:2rem;text-align:center;color:#64748b;'>Loading holiday data…</p>";
+  try {
+    const [holidaysSnap, employeesSnap] = await Promise.all([
+      getDocs(collection(db, "holidays")),
+      getDocs(collection(db, "employees"))
+    ]);
+    adminHolidaysData = holidaysSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const employees = employeesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    adminHolidaysData.sort((a, b) => (b.dateFrom || "").localeCompare(a.dateFrom || ""));
+
+    if (filterEl) {
+      const empIds = [...new Set(adminHolidaysData.map((h) => h.employeeId).filter(Boolean))];
+      const currentVal = filterEl.value;
+      filterEl.innerHTML = "<option value=''>All employees</option>" + empIds.map((eid) => {
+        const emp = employees.find((e) => e.id === eid);
+        const name = emp ? (emp.fullName || emp.name || emp.id) : eid;
+        return `<option value="${escapeHtml(eid)}">${escapeHtml(name)}</option>`;
+      }).join("");
+      if (currentVal && empIds.includes(currentVal)) filterEl.value = currentVal;
+    }
+
+    renderAdminHolidays();
+  } catch (err) {
+    console.error("loadAdminHolidays failed:", err);
+    listEl.innerHTML = "<p style='padding:2rem;text-align:center;color:#ef4444;'>Failed to load: " + escapeHtml(err.message || err) + "</p>";
+  }
+}
+
+function adminHolidayStatusBadge(s) {
+  const st = (s || "pending").toLowerCase();
+  const colors = { approved: "#10b981", rejected: "#ef4444", pending: "#f59e0b" };
+  const c = colors[st] || "#64748b";
+  return `<span style="padding:0.2rem 0.5rem;border-radius:6px;font-size:0.8rem;background:${c}33;color:${c};font-weight:600;">${escapeHtml(st)}</span>`;
+}
+
+function renderAdminHolidays() {
+  const listEl = document.getElementById("admin-holidays-list");
+  const filterEl = document.getElementById("admin-holiday-filter-employee");
+  const statusFilterEl = document.getElementById("admin-holiday-filter-status");
+  if (!listEl) return;
+  const empFilter = filterEl?.value?.trim() || "";
+  const statusFilter = statusFilterEl?.value?.trim() || "";
+  let items = adminHolidaysData;
+  if (empFilter) items = items.filter((h) => h.employeeId === empFilter);
+  if (statusFilter) items = items.filter((h) => (h.status || "pending").toLowerCase() === statusFilter.toLowerCase());
+
+  if (items.length === 0) {
+    listEl.innerHTML = "<p style='padding:2rem;text-align:center;color:#64748b;'>No holiday records found.</p>";
+    return;
+  }
+
+  listEl.innerHTML = `
+    <table class="admin-table" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Employee</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">From</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">To</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Type</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Status</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Notes</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((h) => `
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.06);" data-id="${escapeHtml(h.id)}">
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.employeeName || h.employeeId || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.dateFrom || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.dateTo || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.type || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${adminHolidayStatusBadge(h.status)}</td>
+            <td style="padding:0.6rem 0.8rem;color:#94a3b8;">${escapeHtml(h.notes || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;white-space:nowrap;">
+              <button type="button" class="btn-holiday-approve btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Approve</button>
+              <button type="button" class="btn-holiday-reject btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Reject</button>
+              <button type="button" class="btn-holiday-extend btn btn-sm btn-outline" data-id="${h.id}" data-from="${escapeHtml(h.dateFrom || "")}" data-to="${escapeHtml(h.dateTo || "")}" data-name="${escapeHtml(h.employeeName || "—")}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;margin-right:4px;">Extend</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+
+  listEl.querySelectorAll(".btn-holiday-approve").forEach((btn) => {
+    btn.addEventListener("click", () => handleAdminHolidayAction(btn.dataset.id, "approved"));
+  });
+  listEl.querySelectorAll(".btn-holiday-reject").forEach((btn) => {
+    btn.addEventListener("click", () => handleAdminHolidayAction(btn.dataset.id, "rejected"));
+  });
+  listEl.querySelectorAll(".btn-holiday-extend").forEach((btn) => {
+    btn.addEventListener("click", () => openExtendHolidayModal(btn.dataset));
+  });
+}
+
+async function handleAdminHolidayAction(holidayId, status) {
+  if (!holidayId) return;
+  try {
+    await updateDoc(doc(db, "holidays", holidayId), {
+      status,
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null
+    });
+    showMessage(`Holiday ${status}.`, false);
+    await loadAdminHolidays();
+  } catch (err) {
+    console.error("Holiday action failed:", err);
+    showMessage("Failed: " + (err.message || err), true);
+  }
+}
+
+let extendHolidayId = null;
+
+function openExtendHolidayModal(dataset) {
+  extendHolidayId = dataset.id;
+  const modal = document.getElementById("admin-holiday-extend-modal");
+  const desc = document.getElementById("admin-extend-holiday-desc");
+  const inp = document.getElementById("admin-extend-new-date");
+  if (desc) desc.textContent = `Extend holiday for ${dataset.name || "employee"} (current end: ${dataset.to || "—"})`;
+  if (inp) inp.value = dataset.to || "";
+  if (modal) modal.style.display = "flex";
+}
+
+function closeExtendHolidayModal() {
+  extendHolidayId = null;
+  const modal = document.getElementById("admin-holiday-extend-modal");
+  if (modal) modal.style.display = "none";
+}
+
+async function confirmExtendHoliday() {
+  if (!extendHolidayId) return;
+  const inp = document.getElementById("admin-extend-new-date");
+  const newDate = inp?.value?.trim();
+  if (!newDate) {
+    showMessage("Please enter a new end date.", true);
+    return;
+  }
+  try {
+    await updateDoc(doc(db, "holidays", extendHolidayId), {
+      dateTo: newDate,
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null
+    });
+    showMessage("Holiday extended.", false);
+    closeExtendHolidayModal();
+    await loadAdminHolidays();
+  } catch (err) {
+    console.error("Extend failed:", err);
+    showMessage("Failed: " + (err.message || err), true);
+  }
+}
+
 function showPanel(sectionId) {
   document.querySelectorAll(".admin-panel").forEach((p) => p.classList.remove("active"));
   document.querySelectorAll(".admin-nav-link").forEach((a) => a.classList.remove("active"));
@@ -751,6 +911,7 @@ function showPanel(sectionId) {
   if (panel) panel.classList.add("active");
   if (link) link.classList.add("active");
   if (sectionId === "add-employee") loadEmployeeRecords();
+  if (sectionId === "holidays") loadAdminHolidays();
   if (sectionId === "production-log") {
     loadProductionLogItems();
     if (typeof initProductionLog === "function") {
@@ -1290,6 +1451,12 @@ function init() {
     loadProductionLogItems();
     if (typeof initProductionLog === "function") initProductionLog();
   });
+
+  document.getElementById("admin-holiday-refresh")?.addEventListener("click", loadAdminHolidays);
+  document.getElementById("admin-holiday-filter-employee")?.addEventListener("change", renderAdminHolidays);
+  document.getElementById("admin-holiday-filter-status")?.addEventListener("change", renderAdminHolidays);
+  document.getElementById("admin-extend-cancel")?.addEventListener("click", closeExtendHolidayModal);
+  document.getElementById("admin-extend-confirm")?.addEventListener("click", confirmExtendHoliday);
 
   // Toggle between Add Employee Form and Records List
   document.querySelectorAll(".emp-section-btn").forEach((btn) => {
