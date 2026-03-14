@@ -86,6 +86,7 @@ const modalCloseInventoryDelete = document.getElementById('modal-close-inventory
 
 let managerInventoryItems = [];
 let managerUserNameByUid = {};
+let allWageEntries = [];
 
 // Employee search elements
 const employeeSearchInput = document.getElementById('employee-search');
@@ -1678,10 +1679,11 @@ async function loadWageEntries() {
   try {
     const snap = await getDocs(collection(db, 'wageEntries'));
     const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    allWageEntries = [...entries];
     entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     tblWageEntriesBody.innerHTML = '';
     if (!entries.length) {
-      tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#94a3b8;padding:1.5rem;">No wage entries found.</td></tr>';
+      tblWageEntriesBody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#94a3b8;padding:1.5rem;">No wage entries found.</td></tr>';
       return;
     }
     entries.forEach(w => {
@@ -1691,7 +1693,7 @@ async function loadWageEntries() {
         <td>${escapeHtml(w.date || '—')}</td><td>${escapeHtml(empName)}</td><td>${escapeHtml(w.employeeId || '—')}</td>
         <td>${escapeHtml(w.department || '—')}</td><td>${escapeHtml(w.item || '—')}</td><td>${w.qty || 0}</td>
         <td>${escapeHtml(w.unit || '—')}</td><td>${w.rate || 0}</td><td>${w.ot || 0}</td><td>${w.bonus || 0}</td>
-        <td>${w.deduct || 0}</td><td><strong style="color:#f59e0b">Rs. ${(w.net || 0).toLocaleString()}</strong></td>
+        <td>${w.deduct || 0}</td><td>${w.tax || 0}</td><td><strong style="color:#f59e0b">Rs. ${(w.net || 0).toLocaleString()}</strong></td>
         <td><button class="btn-delete-wage" data-id="${w.id}" data-emp="${escapeHtml(empName)}" data-date="${escapeHtml(w.date || '—')}" data-item="${escapeHtml(w.item || '—')}" data-qty="${w.qty || 0}" data-net="${w.net || 0}" title="Delete">🗑️</button></td>`;
       tblWageEntriesBody.appendChild(tr);
     });
@@ -1700,8 +1702,154 @@ async function loadWageEntries() {
     });
   } catch (err) {
     console.error('Failed to load wage entries:', err);
-    tblWageEntriesBody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#ef4444;">Failed to load wage entries.</td></tr>';
+    tblWageEntriesBody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#ef4444;">Failed to load wage entries.</td></tr>';
   }
+}
+
+// Parse CSV row handling quoted fields and embedded commas
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+// Parse CSV text into rows of columns
+function parseCSVText(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const header = parseCSVLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (cols.some(c => c)) rows.push(cols);
+  }
+  return { header, rows };
+}
+
+// Create duplicate key from wage entry
+function wageEntryKey(w) {
+  const empId = String(w.employeeId || '').trim();
+  const date = String(w.date || '').trim();
+  const dept = String(w.department || '').trim();
+  const item = String(w.item || '').trim();
+  const qty = String(Number(w.qty) || 0);
+  const rate = String(Number(w.rate) || 0);
+  const ot = String(Number(w.ot) || 0);
+  const bonus = String(Number(w.bonus) || 0);
+  const deduct = String(Number(w.deduct) || 0);
+  const tax = String(Number(w.tax) || 0);
+  return `${empId}|${date}|${dept}|${item}|${qty}|${rate}|${ot}|${bonus}|${deduct}|${tax}`;
+}
+
+// Resolve employee ID from CSV Emp ID or Employee name
+function resolveEmployeeId(empIdCol, empNameCol) {
+  const empId = String(empIdCol || '').trim();
+  const empName = String(empNameCol || '').trim();
+  if (empId && employees.some(e => e.id === empId)) return empId;
+  const byName = employees.find(e => {
+    const n = (e.fullName || e.name || '').trim();
+    return n === empName || n.toLowerCase().includes(empName.toLowerCase());
+  });
+  return byName ? byName.id : null;
+}
+
+async function importWageEntriesCSV(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.csv')) {
+    showToast('Please select a valid CSV file.', 'error');
+    return;
+  }
+  const btnImport = document.getElementById('btn-wage-import-csv');
+  const inpFile = document.getElementById('wage-import-file');
+  const originalText = btnImport?.textContent;
+  if (btnImport) { btnImport.disabled = true; btnImport.textContent = 'Importing...'; }
+  try {
+    const snap = await getDocs(collection(db, 'wageEntries'));
+    allWageEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const text = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result || '');
+      r.onerror = () => reject(new Error('Failed to read file'));
+      r.readAsText(file, 'UTF-8');
+    });
+    const { header, rows } = parseCSVText(text);
+    if (rows.length === 0) {
+      showToast('No data rows found in CSV.', 'warning');
+      return;
+    }
+    const colMap = {};
+    const wanted = ['Date', 'Employee', 'Emp ID', 'Department', 'Item', 'Qty', 'Unit', 'Rate', 'OT', 'Bonus', 'Deduct', 'Tax', 'Net Wage'];
+    wanted.forEach((name, idx) => {
+      const i = header.findIndex(h => String(h).trim().toLowerCase() === name.toLowerCase());
+      if (i >= 0) colMap[name] = i;
+    });
+    const get = (row, name) => (colMap[name] >= 0 && colMap[name] < row.length) ? row[colMap[name]] : '';
+    const existingKeys = new Set(allWageEntries.map(wageEntryKey));
+    let imported = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      const dateRaw = get(row, 'Date');
+      const date = dateRaw ? String(dateRaw).trim() : '';
+      if (!date) { skipped++; continue; }
+      const empId = resolveEmployeeId(get(row, 'Emp ID'), get(row, 'Employee'));
+      if (!empId) { skipped++; continue; }
+      const emp = employees.find(e => e.id === empId);
+      const employeeName = emp ? (emp.fullName || emp.name || emp.id) : get(row, 'Employee') || empId;
+      const department = String(get(row, 'Department') || '').trim();
+      const item = String(get(row, 'Item') || '').trim();
+      const qty = Number(get(row, 'Qty')) || 0;
+      const unit = String(get(row, 'Unit') || '').trim() || 'piece';
+      const rate = Number(get(row, 'Rate')) || 0;
+      const ot = Number(get(row, 'OT')) || 0;
+      const bonus = Number(get(row, 'Bonus')) || 0;
+      const deduct = Number(get(row, 'Deduct')) || 0;
+      const tax = Number(get(row, 'Tax')) || 0;
+      const netFromCsv = Number(get(row, 'Net Wage'));
+      const net = !isNaN(netFromCsv) && netFromCsv !== 0
+        ? netFromCsv
+        : (qty * rate) + (ot * rate) + bonus - deduct - tax;
+      const entry = { employeeId: empId, employeeName, date, department, item, qty, unit, rate, ot, bonus, deduct, tax, net };
+      const key = wageEntryKey(entry);
+      if (existingKeys.has(key)) {
+        skipped++;
+        continue;
+      }
+      await addDoc(collection(db, 'wageEntries'), entry);
+      existingKeys.add(key);
+      imported++;
+    }
+    if (inpFile) inpFile.value = '';
+    await loadWageEntries();
+    showToast(`Imported ${imported} wage entries, skipped ${skipped} duplicate/invalid rows.`, imported > 0 ? 'success' : 'info');
+  } catch (err) {
+    console.error('Import failed:', err);
+    showToast('Import failed: ' + (err.message || err), 'error');
+  } finally {
+    if (btnImport) { btnImport.disabled = false; btnImport.textContent = originalText || 'Import CSV'; }
+  }
+}
+
+const btnWageImportCsv = document.getElementById('btn-wage-import-csv');
+const wageImportFileInput = document.getElementById('wage-import-file');
+
+if (btnWageImportCsv && wageImportFileInput) {
+  btnWageImportCsv.addEventListener('click', () => wageImportFileInput.click());
+  wageImportFileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) importWageEntriesCSV(file);
+  });
 }
 
 if (btnPreviewSlip) {
