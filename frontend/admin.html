@@ -45,6 +45,7 @@
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="production-log">📝 Production Log</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="performance">📊 Performance</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="holidays">🏖️ Employees on Holiday</a></li>
+          <li><a role="button" tabindex="0" class="admin-nav-link" data-section="punch-records">⏱️ Punch Records</a></li>
           <li><a href="Manager.html#holiday" class="admin-nav-link" style="text-decoration:none;">Manage Holidays</a></li>
         </ul>
       </nav>
@@ -445,11 +446,51 @@
           </div>
         </section>
 
-        <!-- Employees on Holiday: Admin view of all holiday data -->
+        <!-- Employees on Holiday: Admin view of all holiday data + Book Holiday -->
         <section id="panel-holidays" class="admin-panel">
           <div class="page-container">
             <h2>Employees on Holiday</h2>
             <p class="admin-desc">View all employees currently on or scheduled for holiday.</p>
+
+            <!-- Admin Book Holiday form -->
+            <div class="admin-section-card" style="margin-bottom:1.5rem;background:rgba(26,34,54,0.85);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1.5rem;">
+              <h3 style="margin:0 0 1rem;font-size:1rem;color:#f0f4ff;">Book Holiday</h3>
+              <form id="admin-book-holiday-form" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;align-items:end;">
+                <div class="form-group" style="margin:0;">
+                  <label for="admin-book-holiday-employee-id">Employee ID</label>
+                  <input type="text" id="admin-book-holiday-employee-id" placeholder="Enter employee ID" autocomplete="off" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="admin-book-holiday-employee-name">Employee Name</label>
+                  <input type="text" id="admin-book-holiday-employee-name" readonly placeholder="Enter ID to populate" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(0,0,0,0.3);color:#94a3b8;cursor:not-allowed;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="admin-book-holiday-from">From</label>
+                  <input type="date" id="admin-book-holiday-from" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="admin-book-holiday-to">To</label>
+                  <input type="date" id="admin-book-holiday-to" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="admin-book-holiday-type">Type</label>
+                  <select id="admin-book-holiday-type" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                    <option value="Annual">Annual</option>
+                    <option value="Sick">Sick</option>
+                    <option value="Emergency">Emergency</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="admin-book-holiday-notes">Notes</label>
+                  <input type="text" id="admin-book-holiday-notes" placeholder="Optional" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div style="display:flex;align-items:flex-end;">
+                  <button type="submit" id="admin-book-holiday-btn" class="btn btn-primary" style="padding:0.5rem 1rem;">Book Holiday</button>
+                </div>
+              </form>
+            </div>
+
             <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:1rem;">
               <select id="admin-holiday-filter-employee" style="min-width:200px;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
                 <option value="">All employees</option>
@@ -478,6 +519,39 @@
                   <button type="button" id="admin-extend-confirm" class="btn btn-primary">Extend</button>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Punch Records: view employee In/Out punches from barcode kiosk -->
+        <section id="panel-punch-records" class="admin-panel">
+          <div class="page-container">
+            <h2>Punch Records</h2>
+            <p class="admin-desc">View employee In/Out punch records from the barcode kiosk. <span style="color:#10b981;font-weight:600;">Green</span> = In building · <span style="color:#eab308;font-weight:600;">Yellow</span> = Out of building.</p>
+<div id="punch-records-filter-row" class="punch-records-filters" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:1rem;">
+              <select id="punch-records-filter-employee"><option value="">All employees</option></select>
+              <input type="date" id="punch-records-filter-date-from">
+              <span style="color:#94a3b8;font-size:0.8rem;">to</span>
+              <input type="date" id="punch-records-filter-date-to">
+              <button type="button" id="punch-records-refresh" class="btn btn-primary">Refresh</button>
+            </div>
+            <div id="punch-reset-section" class="admin-section-card punch-records-filters" style="margin-bottom:1.5rem;background:rgba(26,34,54,0.85);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1.5rem;">
+              <h3 style="margin:0 0 0.75rem;font-size:0.95rem;color:#f0f4ff;">Reset Punches (before shift start)</h3>
+              <p style="margin:0 0 1rem;color:#94a3b8;font-size:0.85rem;">Clear punch records for a date so employees can punch in fresh when the shift starts.</p>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+                <div class="form-group" style="margin:0;">
+                  <label for="punch-reset-date" style="display:block;margin-bottom:0.2rem;font-size:0.75rem;">Date</label>
+                  <input type="date" id="punch-reset-date">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="punch-reset-employee" style="display:block;margin-bottom:0.2rem;font-size:0.75rem;">Employee (optional)</label>
+                  <select id="punch-reset-employee"><option value="">All employees</option></select>
+                </div>
+                <button type="button" id="punch-reset-btn" class="btn btn-outline" style="border-color:rgba(239,68,68,0.5);color:#f87171;">Reset Punches</button>
+              </div>
+            </div>
+            <div id="punch-records-list" style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.2);">
+              <p style="padding:2rem;text-align:center;color:#64748b;">Loading punch records…</p>
             </div>
           </div>
         </section>

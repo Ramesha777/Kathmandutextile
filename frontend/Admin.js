@@ -18,6 +18,8 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
+import { initAdminBookHoliday } from "./manageholiday.js";
+import { loadPunchRecords, renderPunchRecords, resetPunchRecords, setPunchDeleteSuccessCallback } from "./punchrecords.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -773,6 +775,7 @@ async function loadAdminHolidays() {
     }
 
     renderAdminHolidays();
+    await initAdminBookHoliday(loadAdminHolidays);
   } catch (err) {
     console.error("loadAdminHolidays failed:", err);
     listEl.innerHTML = "<p style='padding:2rem;text-align:center;color:#ef4444;'>Failed to load: " + escapeHtml(err.message || err) + "</p>";
@@ -912,6 +915,7 @@ function showPanel(sectionId) {
   if (link) link.classList.add("active");
   if (sectionId === "add-employee") loadEmployeeRecords();
   if (sectionId === "holidays") loadAdminHolidays();
+  if (sectionId === "punch-records") loadPunchRecords(db);
   if (sectionId === "production-log") {
     loadProductionLogItems();
     if (typeof initProductionLog === "function") {
@@ -1457,6 +1461,37 @@ function init() {
   document.getElementById("admin-holiday-filter-status")?.addEventListener("change", renderAdminHolidays);
   document.getElementById("admin-extend-cancel")?.addEventListener("click", closeExtendHolidayModal);
   document.getElementById("admin-extend-confirm")?.addEventListener("click", confirmExtendHoliday);
+  setPunchDeleteSuccessCallback((msg) => showMessage(msg));
+  document.getElementById("punch-records-refresh")?.addEventListener("click", () => loadPunchRecords(db));
+  document.getElementById("punch-records-filter-employee")?.addEventListener("change", renderPunchRecords);
+  document.getElementById("punch-records-filter-date-from")?.addEventListener("change", renderPunchRecords);
+  document.getElementById("punch-records-filter-date-to")?.addEventListener("change", renderPunchRecords);
+  document.getElementById("punch-reset-btn")?.addEventListener("click", async () => {
+    const dateEl = document.getElementById("punch-reset-date");
+    const empEl = document.getElementById("punch-reset-employee");
+    const date = dateEl?.value?.trim();
+    const empId = empEl?.value?.trim() || null;
+    if (!date) {
+      showMessage("Please select a date to reset.", true);
+      return;
+    }
+    const scope = empId ? "for selected employee" : "for all employees";
+    if (!confirm(`Reset all punch records on ${date} ${scope}? This cannot be undone.`)) return;
+    const btn = document.getElementById("punch-reset-btn");
+    const orig = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = "Resetting…"; }
+    try {
+      await resetPunchRecords(db, date, empId, (count) => {
+        showMessage(`Reset ${count} punch record(s).`, false);
+        loadPunchRecords(db);
+      });
+    } catch (err) {
+      console.error("Reset punches failed:", err);
+      showMessage("Failed to reset: " + (err.message || err), true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = orig || "Reset Punches"; }
+    }
+  });
 
   // Toggle between Add Employee Form and Records List
   document.querySelectorAll(".emp-section-btn").forEach((btn) => {

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Time Punch | KTI</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: 'DM Sans', sans-serif;
+      background: #0f172a;
+      color: #f0f4ff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .punch-card {
+      text-align: center;
+      max-width: 420px;
+    }
+    .punch-clock {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: #10b981;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      box-shadow: 0 0 40px rgba(16, 185, 129, 0.4);
+    }
+    .punch-clock-time {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.02em;
+    }
+    .punch-message {
+      font-size: 1.1rem;
+      color: #10b981;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .punch-tick {
+      font-size: 3rem;
+      color: #10b981;
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      transform: scale(0.5);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .punch-tick.show {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .punch-message.error {
+      color: #ef4444;
+    }
+    .scan-hint {
+      font-size: 0.9rem;
+      color: #64748b;
+      margin-top: 1rem;
+    }
+    #punch-barcode-input {
+      position: fixed;
+      top: -9999px;
+      left: -9999px;
+      opacity: 0;
+    }
+    .logo {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      width: 48px;
+      height: 48px;
+      background: #10b981;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.2rem;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    .punch-manual-btn {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      font-family: 'DM Sans', sans-serif;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .punch-manual-btn:hover {
+      background: rgba(255,255,255,0.15);
+      color: #f0f4ff;
+    }
+    .punch-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .punch-modal-overlay.show { display: flex; }
+    .punch-modal {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 1.5rem;
+      min-width: 280px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .punch-modal h3 { margin: 0 0 1rem; font-size: 1.1rem; color: #f0f4ff; }
+    .punch-modal input {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(15,23,42,0.6);
+      color: #f0f4ff;
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+    .punch-modal-result {
+      font-size: 0.95rem;
+      margin: 0 0 1rem;
+      min-height: 1.4em;
+    }
+    .punch-modal-result.success { color: #10b981; font-weight: 600; }
+    .punch-modal-result.error { color: #ef4444; font-weight: 600; }
+    .punch-modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+    .punch-modal-actions button {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border: none;
+    }
+    .punch-modal-cancel {
+      background: rgba(255,255,255,0.1);
+      color: #94a3b8;
+    }
+    .punch-modal-punch {
+      background: #10b981;
+      color: #fff;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="punch-card">
+    <div class="punch-clock">
+      <span class="punch-clock-time" id="punch-time">--:-- --</span>
+    </div>
+    <p class="punch-message" id="punch-message">Scan your barcode to punch</p>
+    <div class="punch-tick" id="punch-tick" aria-hidden="true">✓</div>
+    <p class="scan-hint">Barcode scanner will auto-detect when you scan</p>
+  </div>
+
+  <!-- Hidden input receives barcode from scanner (acts as keyboard) -->
+  <input type="text" id="punch-barcode-input" autocomplete="off" autofocus tabindex="-1" placeholder="">
+
+  <button type="button" id="punch-manual-btn" class="punch-manual-btn">Enter ID</button>
+
+  <div id="punch-modal-overlay" class="punch-modal-overlay">
+    <div class="punch-modal">
+      <h3>Enter Employee ID</h3>
+      <input type="text" id="punch-manual-id" placeholder="Employee ID" autocomplete="off">
+      <p class="punch-modal-result" id="punch-modal-result" aria-live="polite"></p>
+      <div class="punch-modal-actions">
+        <button type="button" id="punch-modal-cancel" class="punch-modal-cancel">Cancel</button>
+        <button type="button" id="punch-modal-punch" class="punch-modal-punch">Punch</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="logo">K</div>
+
+  <script type="module" src="punch.js"></script>
+</body>
+</html>

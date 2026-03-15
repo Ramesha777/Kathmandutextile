@@ -19,7 +19,7 @@
     .manager-content-inner { flex: 1; min-height: calc(100vh - 120px); min-width: 0; position: relative; overflow: hidden; }
   </style>
 </head>
-<body class="manager-page" data-required-role="Manager,admin">
+<body class="manager-page" data-required-role="Manager">
   <div class="manager-wrap">
     <header class="manager-header">
       <h1>Manager Dashboard</h1>
@@ -38,7 +38,7 @@
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="inventory">📦 Inventory</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="damage-reports">⚠️ Damage Reports</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="orders">📋 Manage Orders</a></li>
-          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="holiday">🏖️ Manage Holiday</a></li>
+          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="punch-records">⏱️ Punch Records</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="performance">📊 Performance</a></li>
           <li><a href="performance.html" style="display: none;">📊 Full Performance Page</a></li>
         </ul>
@@ -296,63 +296,22 @@
           <div id="managerOrdersList" class="manager-orders-list"></div>
         </section>
 
-        <!-- Manage Holiday Section -->
-        <section id="panel-holiday" class="manager-panel">
-          <h2>Manage Holiday</h2>
-          <p class="manager-desc">Grant holidays to employees and view each employee's schedule.</p>
-          <div class="holiday-layout" style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:1.5rem;">
-            <div class="holiday-grant-card" style="background:rgba(26,34,54,0.85);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1.5rem;">
-              <h3 style="color:#f0f4ff;margin:0 0 1rem;font-size:1.1rem;">Grant Holiday</h3>
-              <form id="holiday-grant-form" class="form-grid" style="display:grid;gap:1rem;">
-                <div class="form-group">
-                  <label for="holiday-employee">Employee</label>
-                  <select id="holiday-employee" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
-                    <option value="">Select employee</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label for="holiday-date-from">From Date</label>
-                  <input type="date" id="holiday-date-from" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
-                </div>
-                <div class="form-group">
-                  <label for="holiday-date-to">To Date</label>
-                  <input type="date" id="holiday-date-to" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
-                </div>
-                <div class="form-group">
-                  <label for="holiday-type">Type</label>
-                  <select id="holiday-type" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
-                    <option value="Annual">Annual Leave</option>
-                    <option value="Sick">Sick Leave</option>
-                    <option value="Emergency">Emergency</option>
-                    <option value="Unpaid">Unpaid</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div class="form-group" style="grid-column:1/-1;">
-                  <label for="holiday-notes">Notes (optional)</label>
-                  <input type="text" id="holiday-notes" placeholder="e.g. Family trip" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
-                </div>
-                <div class="form-group" style="grid-column:1/-1;">
-                  <button type="submit" id="btn-grant-holiday" class="btn btn-primary" style="padding:0.5rem 1.25rem;">Grant Holiday</button>
-                </div>
-              </form>
-            </div>
-            <div class="holiday-schedule-card" style="background:rgba(26,34,54,0.85);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1.5rem;">
-              <h3 style="color:#f0f4ff;margin:0 0 1rem;font-size:1.1rem;">Employee Schedule</h3>
-              <div style="display:flex;gap:8px;align-items:center;margin-bottom:1rem;">
-                <label for="holiday-schedule-employee" style="color:#94a3b8;font-size:0.9rem;">View schedule for:</label>
-                <select id="holiday-schedule-employee" style="flex:1;min-width:180px;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
-                  <option value="">Select employee</option>
-                </select>
-              </div>
-              <div id="holiday-schedule-list" class="holiday-schedule-list" style="max-height:400px;overflow-y:auto;border:1px solid rgba(255,255,255,0.06);border-radius:8px;background:rgba(0,0,0,0.2);">
-                <p style="padding:1.5rem;text-align:center;color:#64748b;">Select an employee to view their holiday schedule.</p>
-              </div>
-            </div>
+        <!-- Punch Records -->
+        <section id="panel-punch-records" class="manager-panel">
+          <h2>Punch Records</h2>
+          <p class="manager-desc">View employee In/Out punch records from the barcode kiosk. <span style="color:#10b981;font-weight:600;">Green</span> = In building · <span style="color:#eab308;font-weight:600;">Yellow</span> = Out of building.</p>
+          <div class="punch-records-filters" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:1rem;">
+            <select id="punch-records-filter-employee"><option value="">All employees</option></select>
+            <input type="date" id="punch-records-filter-date-from">
+            <span style="color:#94a3b8;font-size:0.8rem;">to</span>
+            <input type="date" id="punch-records-filter-date-to">
+            <button type="button" id="punch-records-refresh" class="btn btn-primary">Refresh</button>
+          </div>
+          <div id="punch-records-list" style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.2);">
+            <p style="padding:2rem;text-align:center;color:#64748b;">Loading punch records…</p>
           </div>
         </section>
 
-        <!-- Performance Dashboard Section -->
         <section id="panel-performance" class="manager-panel">
           <h2>Performance Dashboard</h2>
           <p style="padding:2rem; text-align:center; color:#888;">Click to load performance dashboard.</p>

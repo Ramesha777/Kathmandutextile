@@ -34,9 +34,9 @@ service cloud.firestore {
     }
 
     // ─── employees ───
-    // Admin: full access. Manager: read only. Punch kiosk: read (for barcode lookup).
+    // Admin: full access. Manager: read only (wage entry, payslips, holiday).
     match /employees/{id} {
-      allow read: if true;
+      allow read: if isAuthenticated() && (isManager() || isAdmin());
       allow create, update, delete: if isAdmin();
     }
 
@@ -99,15 +99,6 @@ service cloud.firestore {
     // Manager + Admin: read, create, delete (for wage entry, payslips, performance).
     match /wageEntries/{id} {
       allow read, create, update, delete: if isManagerOrAdmin();
-    }
-
-    // ─── punchRecords (barcode punch kiosk: In/Out, daily reset) ───
-    // Kiosk (unauthenticated): create and read (for In/Out logic and cooldown). Manager/Admin: read, update. Admin only: delete.
-    match /punchRecords/{id} {
-      allow create: if true;
-      allow read: if true;
-      allow update: if isManagerOrAdmin();
-      allow delete: if isAdmin();
     }
   }
 }

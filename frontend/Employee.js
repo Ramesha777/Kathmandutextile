@@ -10,12 +10,22 @@ import {
   query,
   where
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
+
+const MAX_DAMAGE_IMAGES = 5;
+const MAX_IMAGE_SIZE_MB = 5;
 
 
 // DOM elements
@@ -165,6 +175,114 @@ if (inventoryForm) {
 
 // Handle problem report form submission
 
+let damageReportCapturedBlobs = [];
+
+async function uploadDamageImages(filesOrBlobs) {
+  const imageUrls = [];
+  const uid = auth.currentUser?.uid || "anon";
+  const prefix = `problem_report_images/${uid}_${Date.now()}`;
+  const items = Array.from(filesOrBlobs || []).slice(0, MAX_DAMAGE_IMAGES);
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) continue;
+    const ext = item.name ? (item.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "jpg") : "jpg";
+    const path = `${prefix}_${i}.${ext}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, item);
+    const url = await getDownloadURL(storageRef);
+    imageUrls.push(url);
+  }
+  return imageUrls;
+}
+
+function renderDamageImagePreviews() {
+  const container = document.getElementById("probImagePreviews");
+  const imagesInput = document.getElementById("probImages");
+  if (!container) return;
+  const files = Array.from(imagesInput?.files || []);
+  const items = [...files, ...damageReportCapturedBlobs].slice(0, MAX_DAMAGE_IMAGES);
+  const fileCount = files.length;
+  container.innerHTML = items.map((item, i) => {
+    const url = item instanceof File || item instanceof Blob ? URL.createObjectURL(item) : null;
+    const isCaptured = i >= fileCount;
+    return url ? `<div style="position:relative;"><img src="${url}" alt="Preview ${i + 1}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.2);"><button type="button" class="btn-remove-preview" data-index="${i}" data-captured="${isCaptured ? "1" : "0"}" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;padding:0;border-radius:50%;background:#ef4444;color:#fff;border:none;cursor:pointer;font-size:14px;line-height:1;">×</button></div>` : "";
+  }).join("");
+  container.querySelectorAll(".btn-remove-preview").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.index, 10);
+      const isCaptured = btn.dataset.captured === "1";
+      if (isCaptured) {
+        damageReportCapturedBlobs.splice(idx - fileCount, 1);
+      } else {
+        const dt = new DataTransfer();
+        for (let j = 0; j < fileCount; j++) if (j !== idx) dt.items.add(imagesInput.files[j]);
+        if (imagesInput) imagesInput.files = dt.files;
+      }
+      renderDamageImagePreviews();
+    });
+  });
+}
+
+function setupCameraCapture() {
+  const takePhotoBtn = document.getElementById("probTakePhoto");
+  const cameraModal = document.getElementById("cameraModal");
+  const cameraVideo = document.getElementById("cameraVideo");
+  const captureBtn = document.getElementById("cameraCaptureBtn");
+  const cancelBtn = document.getElementById("cameraCancelBtn");
+  let stream = null;
+
+  async function openCamera() {
+    try {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+      } catch (_) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+      cameraVideo.srcObject = stream;
+      cameraModal.style.display = "flex";
+    } catch (err) {
+      showMessage("Could not access camera: " + (err.message || err), true);
+    }
+  }
+
+  function closeCamera() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    cameraVideo.srcObject = null;
+    cameraModal.style.display = "none";
+  }
+
+  function capturePhoto() {
+    if (damageReportCapturedBlobs.length + (document.getElementById("probImages")?.files?.length || 0) >= MAX_DAMAGE_IMAGES) {
+      showMessage(`Maximum ${MAX_DAMAGE_IMAGES} images allowed.`, true);
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = cameraVideo.videoWidth;
+    canvas.height = cameraVideo.videoHeight;
+    canvas.getContext("2d").drawImage(cameraVideo, 0, 0);
+    canvas.toBlob(blob => {
+      if (blob) {
+        damageReportCapturedBlobs.push(blob);
+        renderDamageImagePreviews();
+      }
+      closeCamera();
+    }, "image/jpeg", 0.85);
+  }
+
+  if (takePhotoBtn) takePhotoBtn.addEventListener("click", openCamera);
+  if (captureBtn) captureBtn.addEventListener("click", capturePhoto);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeCamera);
+}
+
+if (document.getElementById("probImages")) {
+  document.getElementById("probImages").addEventListener("change", renderDamageImagePreviews);
+  setupCameraCapture();
+}
+
 if (problemForm) {
   problemForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -173,6 +291,7 @@ if (problemForm) {
     const qty = document.getElementById("probQty")?.value;
     const unit = document.getElementById("probUnit")?.value || null;
     const explanation = document.getElementById("probExplanation")?.value?.trim();
+    const imagesInput = document.getElementById("probImages");
 
     if (!barcode || !name || !explanation) {
       showMessage("Please fill Barcode, Name and Explanation.", true);
@@ -185,18 +304,26 @@ if (problemForm) {
       submitBtn.textContent = "Submitting…";
     }
     try {
+      const allImages = [...Array.from(imagesInput?.files || []), ...damageReportCapturedBlobs];
+      const imageUrls = allImages.length ? await uploadDamageImages(allImages) : [];
+      damageReportCapturedBlobs = [];
+      renderDamageImagePreviews();
       await addDoc(collection(db, "problem_reports"), {
         barcode,
         name,
         quantity: qty !== "" && qty != null && !isNaN(Number(qty)) ? Number(qty) : null,
         unit: unit || null,
         explanation,
+        imageUrls: imageUrls.length ? imageUrls : null,
         reportedBy: auth.currentUser?.uid || null,
         reportedByName: auth.currentUser?.displayName || auth.currentUser?.uid || null,
         reportedAt: serverTimestamp()
       });
       showMessage("Problem report submitted successfully.");
       problemForm.reset();
+      if (imagesInput) imagesInput.value = "";
+      damageReportCapturedBlobs = [];
+      renderDamageImagePreviews();
     } catch (err) {
       showMessage("Failed to submit report: " + (err.message || err), true);
     } finally {
@@ -379,6 +506,7 @@ async function loadDamageReports() {
             <th>Qty</th>
             <th>Unit</th>
             <th>Explanation</th>
+            <th>Images</th>
             <th>Reported at</th>
           </tr>
         </thead>
@@ -393,6 +521,10 @@ async function loadDamageReports() {
       }
       const qty = x.quantity != null ? x.quantity : "—";
       const unit = x.unit || x.units || "—";
+      const urls = Array.isArray(x.imageUrls) ? x.imageUrls : [];
+      const imagesHtml = urls.length
+        ? urls.map((u, i) => `<a href="${u}" target="_blank" rel="noopener" title="View image ${i + 1}"><img src="${u}" alt="Damage ${i + 1}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.1);margin-right:4px;vertical-align:middle;"></a>`).join("")
+        : "—";
       html += `
         <tr>
           <td>${escapeHtml(x.barcode)}</td>
@@ -400,6 +532,7 @@ async function loadDamageReports() {
           <td>${escapeHtml(qty)}</td>
           <td>${escapeHtml(unit)}</td>
           <td>${escapeHtml(x.explanation)}</td>
+          <td>${imagesHtml}</td>
           <td>${escapeHtml(reportedAt)}</td>
         </tr>
       `;

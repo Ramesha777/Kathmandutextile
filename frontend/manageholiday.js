@@ -262,3 +262,132 @@ export async function loadHolidayPanel() {
 
   renderScheduleForEmployee(selSchedule?.value || "", currentUserCanDelete);
 }
+
+// ─── Admin: Book Holiday (admin can directly book holiday for employees, auto-approved) ───
+let adminEmployeesForBook = [];
+let adminBookHolidayFormWired = false;
+let adminBookHolidayOnSuccess = null;
+
+function showAdminHolidayMessage(msg, isError = false) {
+  const adminMsg = document.getElementById("adminMessage");
+  if (adminMsg) {
+    adminMsg.textContent = msg;
+    adminMsg.className = "admin-message " + (isError ? "error" : "success");
+    adminMsg.style.display = "block";
+    setTimeout(() => (adminMsg.style.display = "none"), 5000);
+  } else if (toastEl) {
+    showToast(msg, isError ? "error" : "success");
+  }
+}
+
+function onAdminBookHolidayEmployeeIdInput() {
+  const inpId = document.getElementById("admin-book-holiday-employee-id");
+  const inpName = document.getElementById("admin-book-holiday-employee-name");
+  if (!inpId || !inpName) return;
+  const id = inpId.value.trim();
+  if (!id) {
+    inpName.value = "";
+    inpName.placeholder = "Enter ID to populate";
+    return;
+  }
+  const emp = adminEmployeesForBook.find((e) => e.id === id);
+  if (emp) {
+    inpName.value = emp.fullName || emp.name || emp.email || emp.id;
+    inpName.placeholder = "";
+  } else {
+    inpName.value = "";
+    inpName.placeholder = "No employee found for this ID";
+  }
+}
+
+export async function initAdminBookHoliday(onSuccess) {
+  adminBookHolidayOnSuccess = onSuccess || null;
+  const form = document.getElementById("admin-book-holiday-form");
+  const inpEmployeeId = document.getElementById("admin-book-holiday-employee-id");
+  if (!form || !inpEmployeeId) return;
+
+  try {
+    const snap = await getDocs(collection(db, COLLECTION_EMPLOYEES));
+    adminEmployeesForBook = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error("initAdminBookHoliday: failed to load employees", err);
+    showAdminHolidayMessage("Failed to load employees.", true);
+    return;
+  }
+
+  if (!adminBookHolidayFormWired) {
+    adminBookHolidayFormWired = true;
+    inpEmployeeId.addEventListener("input", onAdminBookHolidayEmployeeIdInput);
+    inpEmployeeId.addEventListener("change", onAdminBookHolidayEmployeeIdInput);
+    form.addEventListener("submit", handleAdminBookHoliday);
+  }
+
+  onAdminBookHolidayEmployeeIdInput();
+}
+
+async function handleAdminBookHoliday(e) {
+  e.preventDefault();
+  const inpEmployeeId = document.getElementById("admin-book-holiday-employee-id");
+  const inpEmployeeName = document.getElementById("admin-book-holiday-employee-name");
+  const inpFrom = document.getElementById("admin-book-holiday-from");
+  const inpTo = document.getElementById("admin-book-holiday-to");
+  const selType = document.getElementById("admin-book-holiday-type");
+  const inpNotes = document.getElementById("admin-book-holiday-notes");
+  const btn = document.getElementById("admin-book-holiday-btn");
+
+  const empId = inpEmployeeId?.value?.trim();
+  const employeeName = inpEmployeeName?.value?.trim();
+  const dateFrom = inpFrom?.value?.trim();
+  const dateTo = inpTo?.value?.trim();
+  const type = selType?.value || "Annual";
+  const notes = inpNotes?.value?.trim() || "";
+
+  if (!empId || !dateFrom || !dateTo) {
+    showAdminHolidayMessage("Please enter employee ID and dates.", true);
+    return;
+  }
+  if (!employeeName) {
+    showAdminHolidayMessage("Enter a valid employee ID to populate the name.", true);
+    return;
+  }
+  if (dateTo < dateFrom) {
+    showAdminHolidayMessage("To date must be on or after From date.", true);
+    return;
+  }
+
+  const originalText = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Booking...";
+  }
+
+  try {
+    await addDoc(collection(db, COLLECTION_HOLIDAYS), {
+      employeeId: empId,
+      employeeName,
+      dateFrom,
+      dateTo,
+      type,
+      notes,
+      status: "approved",
+      bookedBy: "admin",
+      createdAt: new Date().toISOString(),
+    });
+    showAdminHolidayMessage(`Holiday booked for ${employeeName} (${dateFrom} – ${dateTo})`, false);
+    if (inpEmployeeId) inpEmployeeId.value = "";
+    if (inpEmployeeName) inpEmployeeName.value = "";
+    if (inpEmployeeName) inpEmployeeName.placeholder = "Enter ID to populate";
+    if (inpFrom) inpFrom.value = "";
+    if (inpTo) inpTo.value = "";
+    if (inpNotes) inpNotes.value = "";
+    if (typeof adminBookHolidayOnSuccess === "function") adminBookHolidayOnSuccess();
+  } catch (err) {
+    console.error("Admin book holiday failed:", err);
+    showAdminHolidayMessage("Failed to book holiday: " + (err.message || err), true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText || "Book Holiday";
+    }
+  }
+}

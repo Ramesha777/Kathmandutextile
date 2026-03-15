@@ -1,5 +1,6 @@
 // manager.js
 import { loadHolidayPanel } from "./manageholiday.js";
+import { loadPunchRecords, renderPunchRecords } from "./punchrecords.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
@@ -148,6 +149,9 @@ navItems.forEach(it => {
     }
     if (section === 'holiday') {
       loadHolidayPanel();
+    }
+    if (section === 'punch-records') {
+      loadPunchRecords(db);
     }
     if (section === 'performance') {
       let perfPanel = document.getElementById('panel-performance');
@@ -700,13 +704,17 @@ async function loadManagerDamageReports() {
     }
     let html = `
       <table class="manager-table">
-        <thead><tr><th>Barcode/ID</th><th>Product</th><th>Qty</th><th>Unit</th><th>Explanation</th><th>Reported at</th><th>Action</th></tr></thead>
+        <thead><tr><th>Barcode/ID</th><th>Product</th><th>Qty</th><th>Unit</th><th>Explanation</th><th>Images</th><th>Reported at</th><th>Action</th></tr></thead>
         <tbody>`;
     for (const x of items) {
       let reportedAt = '—';
       if (x.reportedAt?.toDate) {
         try { reportedAt = x.reportedAt.toDate().toLocaleString(); } catch (_) {}
       }
+      const urls = Array.isArray(x.imageUrls) ? x.imageUrls : [];
+      const imagesHtml = urls.length
+        ? urls.map((u, i) => `<a href="${u}" target="_blank" rel="noopener" title="View image ${i + 1}"><img src="${u}" alt="Damage ${i + 1}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.1);margin-right:4px;vertical-align:middle;"></a>`).join("")
+        : "—";
       html += `
         <tr>
           <td>${escapeHtml(x.barcode)}</td>
@@ -714,6 +722,7 @@ async function loadManagerDamageReports() {
           <td>${escapeHtml(x.quantity != null ? x.quantity : '—')}</td>
           <td>${escapeHtml(x.unit || x.units || '—')}</td>
           <td>${escapeHtml(x.explanation)}</td>
+          <td>${imagesHtml}</td>
           <td>${escapeHtml(reportedAt)}</td>
           <td>
             <button type="button" class="btn btn-sm btn-danger btn-delete-damage"
@@ -2053,6 +2062,11 @@ if (btnShareWhatsApp) {
 
 if (btnCancelShare) btnCancelShare.addEventListener('click', closeShareModal);
 if (modalCloseShare) modalCloseShare.addEventListener('click', closeShareModal);
+
+document.getElementById('punch-records-refresh')?.addEventListener('click', () => loadPunchRecords(db));
+document.getElementById('punch-records-filter-employee')?.addEventListener('change', renderPunchRecords);
+document.getElementById('punch-records-filter-date-from')?.addEventListener('change', renderPunchRecords);
+document.getElementById('punch-records-filter-date-to')?.addEventListener('change', renderPunchRecords);
 
 function closeShareModal() {
   document.getElementById('share-modal')?.style?.setProperty('display', 'none');

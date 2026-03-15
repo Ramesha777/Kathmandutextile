@@ -172,6 +172,23 @@
               <label for="probExplanation">Explanation</label>
               <textarea id="probExplanation" rows="4" placeholder="Describe the problem (damage, defect, missing, etc.)" required></textarea>
             </div>
+            <div class="form-group">
+              <label for="probImages">Photos of damaged items (optional)</label>
+              <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem;">
+                <input type="file" id="probImages" accept="image/*" multiple capture="environment">
+                <button type="button" id="probTakePhoto" class="btn btn-outline" style="padding:0.4rem 0.8rem;font-size:0.9rem;">📷 Take Photo</button>
+              </div>
+              <div id="probImagePreviews" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;"></div>
+              <p class="form-hint" style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem;">Select from device or take a photo. Max 5 images, 5MB each.</p>
+            </div>
+            <!-- Camera capture modal -->
+            <div id="cameraModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:1000;align-items:center;justify-content:center;flex-direction:column;">
+              <video id="cameraVideo" autoplay playsinline style="max-width:100%;max-height:70vh;border-radius:8px;"></video>
+              <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="button" id="cameraCaptureBtn" class="btn btn-primary">Capture</button>
+                <button type="button" id="cameraCancelBtn" class="btn btn-outline">Cancel</button>
+              </div>
+            </div>
             <button type="submit" class="btn btn-primary">Submit report</button>
           </form>
         </section>
