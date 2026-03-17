@@ -15,11 +15,18 @@ import {
   serverTimestamp,
   query,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 // caches
 let employees = [];
@@ -67,6 +74,8 @@ const orderSearchQueryEl = document.getElementById('orderSearchQuery');
 const orderStatusFilterEl = document.getElementById('orderStatusFilter');
 
 let deleteDamageId = null;
+let lastPayslipShareData = null; // { url, emp, month, year } for SMS/WhatsApp/Mail
+let lastInvoiceShareData = null;  // { url, order } for invoice share
 const deleteDamageModal = document.getElementById('delete-damage-modal');
 const deleteDamageDetails = document.getElementById('delete-damage-details');
 const btnConfirmDamageDelete = document.getElementById('btn-confirm-damage-delete');
@@ -944,6 +953,8 @@ function openInvoiceSignatureModal(orderId, mode = 'download') {
 
 function closeInvoiceSignatureModal() {
   pendingInvoiceOrderId = null;
+  const linkResult = document.getElementById('invoice-link-result');
+  if (linkResult) linkResult.style.display = 'none';
   if (invoiceSignatureModal) invoiceSignatureModal.style.display = 'none';
 }
 
@@ -979,19 +990,75 @@ function initInvoiceSignatureModal() {
     if (orderId) await printOrderInvoice(orderId, opts);
   });
 
+  document.getElementById('invoice-signature-modal-getlink')?.addEventListener('click', async () => {
+    const opts = getInvoiceOptions();
+    const orderId = pendingInvoiceOrderId;
+    if (!orderId) return;
+    const btn = document.getElementById('invoice-signature-modal-getlink');
+    const resultDiv = document.getElementById('invoice-link-result');
+    const urlInput = document.getElementById('invoice-download-url');
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+      if (resultDiv) resultDiv.style.display = 'none';
+      showToast('Uploading invoice…', 'info');
+      const result = await getInvoiceDownloadLink(orderId, opts);
+      const url = result?.url;
+      if (url && urlInput) urlInput.value = url;
+      if (resultDiv) resultDiv.style.display = 'block';
+      lastInvoiceShareData = result ? { url, order: result.order } : null;
+      showToast('Link ready. Copy and send to customer.', 'success');
+    } catch (err) {
+      console.error('Get invoice link failed:', err);
+      showToast('Failed: ' + (err.message || ''), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔗 Get Download Link'; }
+    }
+  });
+
+  document.getElementById('btn-copy-invoice-url')?.addEventListener('click', () => {
+    const inp = document.getElementById('invoice-download-url');
+    if (inp?.value) { navigator.clipboard.writeText(inp.value); showToast('URL copied.', 'success'); }
+  });
+
+  // Invoice (signature modal): SMS, WhatsApp, Mail
+  document.getElementById('btn-invoice-sms')?.addEventListener('click', () => {
+    const url = document.getElementById('invoice-download-url')?.value || lastInvoiceShareData?.url;
+    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    openSms(url, 'Your invoice: ', phone);
+  });
+  document.getElementById('btn-invoice-whatsapp')?.addEventListener('click', () => {
+    const url = document.getElementById('invoice-download-url')?.value || lastInvoiceShareData?.url;
+    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    openWhatsApp(url, 'Your invoice: ', phone);
+  });
+  document.getElementById('btn-invoice-mail')?.addEventListener('click', () => {
+    const url = document.getElementById('invoice-download-url')?.value || lastInvoiceShareData?.url;
+    const { email } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    openMail(url, 'Your Invoice', 'Your invoice download link: ', email);
+  });
+
   invoiceSignatureModal?.addEventListener('click', (e) => {
     if (e.target === invoiceSignatureModal) closeInvoiceSignatureModal();
   });
 
   // Preview modal close
+  const hidePreviewLinkResult = () => {
+    const r = document.getElementById('invoice-preview-link-result');
+    if (r) r.style.display = 'none';
+  };
   document.getElementById('invoice-preview-modal-close')?.addEventListener('click', () => {
+    hidePreviewLinkResult();
     if (invoicePreviewModal) invoicePreviewModal.style.display = 'none';
   });
   document.getElementById('invoice-preview-close-btn')?.addEventListener('click', () => {
+    hidePreviewLinkResult();
     if (invoicePreviewModal) invoicePreviewModal.style.display = 'none';
   });
   invoicePreviewModal?.addEventListener('click', (e) => {
-    if (e.target === invoicePreviewModal) invoicePreviewModal.style.display = 'none';
+    if (e.target === invoicePreviewModal) {
+      hidePreviewLinkResult();
+      invoicePreviewModal.style.display = 'none';
+    }
   });
 
   // Preview: Discount/VAT toggles
@@ -1008,6 +1075,52 @@ function initInvoiceSignatureModal() {
   });
   document.getElementById('invoice-preview-download-btn')?.addEventListener('click', async () => {
     if (lastPreviewOrderId) await printOrderInvoice(lastPreviewOrderId, getPreviewDiscountVatOpts());
+  });
+
+  document.getElementById('invoice-preview-getlink-btn')?.addEventListener('click', async () => {
+    if (!lastPreviewOrderId) return;
+    const btn = document.getElementById('invoice-preview-getlink-btn');
+    const resultDiv = document.getElementById('invoice-preview-link-result');
+    const urlInput = document.getElementById('invoice-preview-download-url');
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+      if (resultDiv) resultDiv.style.display = 'none';
+      showToast('Uploading invoice…', 'info');
+      const opts = getPreviewDiscountVatOpts();
+      const result = await getInvoiceDownloadLink(lastPreviewOrderId, opts);
+      const url = result?.url;
+      if (url && urlInput) urlInput.value = url;
+      if (resultDiv) resultDiv.style.display = 'block';
+      lastInvoiceShareData = result ? { url, order: result.order } : null;
+      showToast('Link ready. Copy and send to customer.', 'success');
+    } catch (err) {
+      console.error('Get invoice link failed:', err);
+      showToast('Failed: ' + (err.message || ''), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔗 Get Download Link'; }
+    }
+  });
+
+  document.getElementById('btn-copy-invoice-preview-url')?.addEventListener('click', () => {
+    const inp = document.getElementById('invoice-preview-download-url');
+    if (inp?.value) { navigator.clipboard.writeText(inp.value); showToast('URL copied.', 'success'); }
+  });
+
+  // Invoice (preview modal): SMS, WhatsApp, Mail
+  document.getElementById('btn-invoice-preview-sms')?.addEventListener('click', () => {
+    const url = document.getElementById('invoice-preview-download-url')?.value || lastInvoiceShareData?.url;
+    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    openSms(url, 'Your invoice: ', phone);
+  });
+  document.getElementById('btn-invoice-preview-whatsapp')?.addEventListener('click', () => {
+    const url = document.getElementById('invoice-preview-download-url')?.value || lastInvoiceShareData?.url;
+    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    openWhatsApp(url, 'Your invoice: ', phone);
+  });
+  document.getElementById('btn-invoice-preview-mail')?.addEventListener('click', () => {
+    const url = document.getElementById('invoice-preview-download-url')?.value || lastInvoiceShareData?.url;
+    const { email } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    openMail(url, 'Your Invoice', 'Your invoice download link: ', email);
   });
 }
 
@@ -1145,6 +1258,18 @@ async function printOrderInvoice(orderId, opts = {}) {
     console.error('Print invoice error:', err);
     showToast('Failed: ' + (err.message || ''), 'error');
   }
+}
+
+async function getInvoiceDownloadLink(orderId, opts = {}) {
+  const data = await getInvoiceData(orderId, opts);
+  if (!data) return null;
+  if (typeof window.jspdf === 'undefined') return null;
+  const pdfDoc = await generateOrderInvoicePDF({ ...data, authorisedSignature: opts?.sig || 'Authorised' });
+  const pdfBlob = pdfDoc.output('blob');
+  const safeName = (data.order.supplierName || 'Order').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 40);
+  const path = `invoices/${auth.currentUser?.uid || 'anon'}_${Date.now()}_Invoice_${orderId}_${safeName}.pdf`;
+  const url = await uploadPdfAndGetUrl(pdfBlob, path);
+  return { url, order: data.order };
 }
 
 async function generateOrderInvoicePDF(data) {
@@ -2002,6 +2127,59 @@ if (btnShareSlip) {
   });
 }
 
+// ─── Upload PDF to Firebase Storage and get download URL ───
+async function uploadPdfAndGetUrl(blob, storagePath) {
+  const storageRef = ref(storage, storagePath);
+  await uploadBytes(storageRef, blob);
+  return getDownloadURL(storageRef);
+}
+
+// ─── Share via SMS, WhatsApp, Email (opens app with pre-filled message) ───
+function extractPhoneForWa(contact) {
+  if (!contact || typeof contact !== 'string') return null;
+  const digits = contact.replace(/\D/g, '');
+  if (digits.length < 10) return null;
+  let num = digits;
+  if (!num.startsWith('977') && num.length === 10) num = '977' + num;
+  if (num.startsWith('0')) num = '977' + num.slice(1);
+  return num;
+}
+
+function isEmailLike(str) {
+  return str && typeof str === 'string' && str.includes('@') && str.length > 5;
+}
+
+function openSms(url, message, phone) {
+  if (!url) { showToast('Get download link first.', 'error'); return; }
+  const body = encodeURIComponent(message + ' ' + url);
+  const href = phone ? `sms:${encodeURIComponent(phone.replace(/\s/g, ''))}?body=${body}` : `sms:?body=${body}`;
+  window.open(href, '_blank');
+}
+
+function openWhatsApp(url, message, phone) {
+  if (!url) { showToast('Get download link first.', 'error'); return; }
+  const text = encodeURIComponent(message + ' ' + url);
+  const num = phone ? extractPhoneForWa(phone) : null;
+  const href = num ? `https://wa.me/${num}?text=${text}` : `https://api.whatsapp.com/send?text=${text}`;
+  window.open(href, '_blank');
+}
+
+function openMail(url, subject, body, email) {
+  if (!url) { showToast('Get download link first.', 'error'); return; }
+  const fullBody = body + ' ' + url;
+  const params = new URLSearchParams({ subject: subject || 'Download link', body: fullBody });
+  const href = email ? `mailto:${encodeURIComponent(email)}?${params}` : `mailto:?${params}`;
+  window.location.href = href;
+}
+
+// Parse supplierContact: if contains @ treat as email, else as phone
+function parseSupplierContact(contact) {
+  if (!contact || typeof contact !== 'string') return { phone: null, email: null };
+  const c = contact.trim();
+  if (isEmailLike(c)) return { phone: null, email: c };
+  return { phone: c, email: null };
+}
+
 // Share modal handlers
 if (btnShareEmail) {
   btnShareEmail.addEventListener('click', async () => {
@@ -2042,8 +2220,91 @@ if (btnShareEmail) {
       showToast('Share failed: ' + (err.message || 'Please try preview first'), 'error');
     } finally {
       btnShareEmail.disabled = false;
-      btnShareEmail.textContent = 'Email';
+      btnShareEmail.textContent = 'Download PDF';
     }
+  });
+}
+
+// Get payslip download link (upload to Storage, show URL)
+const btnGetPayslipLink = document.getElementById('btn-get-payslip-link');
+const payslipLinkResult = document.getElementById('payslip-link-result');
+const payslipDownloadUrlInput = document.getElementById('payslip-download-url');
+const btnCopyPayslipUrl = document.getElementById('btn-copy-payslip-url');
+
+if (btnGetPayslipLink) {
+  btnGetPayslipLink.addEventListener('click', async () => {
+    try {
+      btnGetPayslipLink.disabled = true;
+      btnGetPayslipLink.textContent = 'Generating...';
+      if (payslipLinkResult) payslipLinkResult.style.display = 'none';
+
+      const empId = selSlipEmployee.value;
+      const month = selSlipMonth.value;
+      const year = selSlipYear?.value || new Date().getFullYear().toString();
+      const data = await getSlipData(empId, month, year);
+
+      if (!data || data.entries.length === 0) {
+        showToast('No data to share.', 'error');
+        return;
+      }
+
+      const pdfDoc = await generatePayslipPDF(data);
+      const pdfBlob = pdfDoc.output('blob');
+      const empName = (data.emp.fullName || data.emp.name || 'Employee').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 30);
+      const safeMonth = month.replace(/[^a-zA-Z]/g, '');
+      const path = `payslips/${auth.currentUser?.uid || 'anon'}_${Date.now()}_Payslip_${empName}_${safeMonth}_${year}.pdf`;
+
+      const url = await uploadPdfAndGetUrl(pdfBlob, path);
+      if (payslipDownloadUrlInput) payslipDownloadUrlInput.value = url;
+      if (payslipLinkResult) payslipLinkResult.style.display = 'block';
+      lastPayslipShareData = { url, emp: data.emp, month, year };
+      showToast('Payslip link ready. Copy and send to employee.', 'success');
+    } catch (err) {
+      console.error('Get payslip link failed:', err);
+      showToast('Failed: ' + (err.message || ''), 'error');
+    } finally {
+      btnGetPayslipLink.disabled = false;
+      btnGetPayslipLink.textContent = 'Get Download Link';
+    }
+  });
+}
+
+if (btnCopyPayslipUrl) {
+  btnCopyPayslipUrl.addEventListener('click', () => {
+    if (payslipDownloadUrlInput?.value) {
+      navigator.clipboard.writeText(payslipDownloadUrlInput.value);
+      showToast('URL copied to clipboard.', 'success');
+    }
+  });
+}
+
+// Payslip: SMS, WhatsApp, Mail
+const btnPayslipSms = document.getElementById('btn-payslip-sms');
+const btnPayslipWa = document.getElementById('btn-payslip-whatsapp');
+const btnPayslipMail = document.getElementById('btn-payslip-mail');
+const payslipMsg = (m, y, url) => `Your salary payslip for ${m} ${y}: ${url}`;
+if (btnPayslipSms) {
+  btnPayslipSms.addEventListener('click', () => {
+    const url = payslipDownloadUrlInput?.value || lastPayslipShareData?.url;
+    const d = lastPayslipShareData;
+    const msg = d ? payslipMsg(d.month, d.year, url) : `Your salary payslip: ${url}`;
+    openSms(url, msg, d?.emp?.phone);
+  });
+}
+if (btnPayslipWa) {
+  btnPayslipWa.addEventListener('click', () => {
+    const url = payslipDownloadUrlInput?.value || lastPayslipShareData?.url;
+    const d = lastPayslipShareData;
+    const msg = d ? payslipMsg(d.month, d.year, url) : `Your salary payslip: ${url}`;
+    openWhatsApp(url, msg, d?.emp?.phone);
+  });
+}
+if (btnPayslipMail) {
+  btnPayslipMail.addEventListener('click', () => {
+    const url = payslipDownloadUrlInput?.value || lastPayslipShareData?.url;
+    const d = lastPayslipShareData;
+    const msg = d ? payslipMsg(d.month, d.year, url) : `Your salary payslip: ${url}`;
+    openMail(url, 'Salary Payslip', msg, d?.emp?.email);
   });
 }
 
@@ -2069,6 +2330,8 @@ document.getElementById('punch-records-filter-date-from')?.addEventListener('cha
 document.getElementById('punch-records-filter-date-to')?.addEventListener('change', renderPunchRecords);
 
 function closeShareModal() {
+  const linkResult = document.getElementById('payslip-link-result');
+  if (linkResult) linkResult.style.display = 'none';
   document.getElementById('share-modal')?.style?.setProperty('display', 'none');
 }
 

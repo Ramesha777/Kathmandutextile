@@ -5,5 +5,16 @@ service firebase.storage {
     match /problem_report_images/{allPaths=**} {
       allow read, write: if request.auth != null;
     }
+    // Employee photos (ID, profile): authenticated users can read and write
+    match /employee_photos/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    // Payslips & Invoices: Manager/Admin can read and write (for sharing with employees/customers)
+    match /payslips/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    match /invoices/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
   }
 }

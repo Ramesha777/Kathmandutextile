@@ -174,12 +174,32 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="empIdPhotoUrl">ID photo URL</label>
-              <input type="url" id="empIdPhotoUrl" placeholder="https://...">
+              <label>ID photo</label>
+              <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.25rem;">
+                <input type="url" id="empIdPhotoUrl" placeholder="Or paste URL (https://...)">
+                <input type="file" id="empIdPhotoFile" accept="image/*" capture="environment" style="display:none">
+                <button type="button" id="empIdPhotoUpload" class="btn btn-outline btn-sm">📁 Upload</button>
+                <button type="button" id="empIdPhotoTake" class="btn btn-outline btn-sm">📷 Take Photo</button>
+              </div>
+              <div id="empIdPhotoPreview" class="emp-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);overflow:hidden;background:rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;color:#64748b;font-size:0.8rem;">No image</div>
             </div>
             <div class="form-group">
-              <label for="empPhotoUrl">Photo URL (employee photo)</label>
-              <input type="url" id="empPhotoUrl" placeholder="https://...">
+              <label>Employee photo</label>
+              <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.25rem;">
+                <input type="url" id="empPhotoUrl" placeholder="Or paste URL (https://...)">
+                <input type="file" id="empPhotoFile" accept="image/*" capture="environment" style="display:none">
+                <button type="button" id="empPhotoUpload" class="btn btn-outline btn-sm">📁 Upload</button>
+                <button type="button" id="empPhotoTake" class="btn btn-outline btn-sm">📷 Take Photo</button>
+              </div>
+              <div id="empPhotoPreview" class="emp-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);overflow:hidden;background:rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;color:#64748b;font-size:0.8rem;">No image</div>
+            </div>
+            <!-- Camera modal for employee photos -->
+            <div id="empPhotoCameraModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:1000;align-items:center;justify-content:center;flex-direction:column;">
+              <video id="empPhotoCameraVideo" autoplay playsinline style="max-width:100%;max-height:70vh;border-radius:8px;"></video>
+              <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="button" id="empPhotoCameraCapture" class="btn btn-primary">Capture</button>
+                <button type="button" id="empPhotoCameraCancel" class="btn btn-outline">Cancel</button>
+              </div>
             </div>
             <button type="submit" class="btn btn-primary">Add employee (info only)</button>
             </form>

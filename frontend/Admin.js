@@ -17,6 +17,12 @@ import {
   updateDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 import { initAdminBookHoliday } from "./manageholiday.js";
 import { loadPunchRecords, renderPunchRecords, resetPunchRecords, setPunchDeleteSuccessCallback } from "./punchrecords.js";
@@ -24,6 +30,11 @@ import { loadPunchRecords, renderPunchRecords, resetPunchRecords, setPunchDelete
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
+
+let empIdPhotoBlob = null;
+let empPhotoBlob = null;
+let empPhotoCameraTarget = null;
 
 const ROLES = ["admin", "Manager", "employee"];
 
@@ -304,6 +315,109 @@ function isValidUrl(url) {
   }
 }
 
+// ─── Employee photo upload / take / preview ───
+function updateEmpPhotoPreview(elId, blobOrFile, urlStr) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (blobOrFile) {
+    const url = URL.createObjectURL(blobOrFile);
+    el.innerHTML = `<img src="${url}" alt="Preview" style="width:100%;height:100%;object-fit:cover;">`;
+  } else if (urlStr && isValidUrl(urlStr)) {
+    el.innerHTML = `<img src="${urlStr}" alt="Preview" style="width:100%;height:100%;object-fit:cover;" referrerpolicy="no-referrer" onerror="this.parentElement.innerHTML='Invalid image';this.parentElement.style.color='#ef4444';">`;
+  } else {
+    el.innerHTML = "No image";
+    el.style.color = "#64748b";
+  }
+}
+
+function setupEmpPhotoListeners() {
+  const idUrl = document.getElementById("empIdPhotoUrl");
+  const idFile = document.getElementById("empIdPhotoFile");
+  const idUpload = document.getElementById("empIdPhotoUpload");
+  const idTake = document.getElementById("empIdPhotoTake");
+  const photoUrl = document.getElementById("empPhotoUrl");
+  const photoFile = document.getElementById("empPhotoFile");
+  const photoUpload = document.getElementById("empPhotoUpload");
+  const photoTake = document.getElementById("empPhotoTake");
+  const camModal = document.getElementById("empPhotoCameraModal");
+  const camVideo = document.getElementById("empPhotoCameraVideo");
+  const camCapture = document.getElementById("empPhotoCameraCapture");
+  const camCancel = document.getElementById("empPhotoCameraCancel");
+
+  const onIdUrlChange = () => { if (!empIdPhotoBlob && !idFile?.files?.length) updateEmpPhotoPreview("empIdPhotoPreview", null, idUrl?.value?.trim() || null); };
+  const onPhotoUrlChange = () => { if (!empPhotoBlob && !photoFile?.files?.length) updateEmpPhotoPreview("empPhotoPreview", null, photoUrl?.value?.trim() || null); };
+
+  if (idUrl) idUrl.addEventListener("input", onIdUrlChange);
+  if (photoUrl) photoUrl.addEventListener("input", onPhotoUrlChange);
+
+  if (idFile) {
+    idFile.addEventListener("change", () => {
+      empIdPhotoBlob = null;
+      if (idFile.files?.[0]) updateEmpPhotoPreview("empIdPhotoPreview", idFile.files[0], null);
+      else if (!idUrl?.value?.trim()) updateEmpPhotoPreview("empIdPhotoPreview", null, null);
+    });
+  }
+  if (idUpload) idUpload.addEventListener("click", () => idFile?.click());
+
+  if (photoFile) {
+    photoFile.addEventListener("change", () => {
+      empPhotoBlob = null;
+      if (photoFile.files?.[0]) updateEmpPhotoPreview("empPhotoPreview", photoFile.files[0], null);
+      else if (!photoUrl?.value?.trim()) updateEmpPhotoPreview("empPhotoPreview", null, null);
+    });
+  }
+  if (photoUpload) photoUpload.addEventListener("click", () => photoFile?.click());
+
+  function openCamera(target) {
+    empPhotoCameraTarget = target;
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then(stream => {
+        camVideo.srcObject = stream;
+        camModal.style.display = "flex";
+      })
+      .catch(err => showMessage("Could not access camera: " + (err.message || err), true));
+  }
+
+  function closeCamera() {
+    if (camVideo.srcObject) camVideo.srcObject.getTracks().forEach(t => t.stop());
+    camVideo.srcObject = null;
+    camModal.style.display = "none";
+    empPhotoCameraTarget = null;
+  }
+
+  function capturePhoto() {
+    const canvas = document.createElement("canvas");
+    canvas.width = camVideo.videoWidth;
+    canvas.height = camVideo.videoHeight;
+    canvas.getContext("2d").drawImage(camVideo, 0, 0);
+    canvas.toBlob(blob => {
+      if (blob && empPhotoCameraTarget === "id") {
+        empIdPhotoBlob = blob;
+        if (idFile) idFile.value = "";
+        updateEmpPhotoPreview("empIdPhotoPreview", blob, null);
+      } else if (blob && empPhotoCameraTarget === "employee") {
+        empPhotoBlob = blob;
+        if (photoFile) photoFile.value = "";
+        updateEmpPhotoPreview("empPhotoPreview", blob, null);
+      }
+      closeCamera();
+    }, "image/jpeg", 0.9);
+  }
+
+  if (idTake) idTake.addEventListener("click", () => openCamera("id"));
+  if (photoTake) photoTake.addEventListener("click", () => openCamera("employee"));
+  if (camCapture) camCapture.addEventListener("click", capturePhoto);
+  if (camCancel) camCancel.addEventListener("click", closeCamera);
+}
+
+async function uploadEmpPhotoToStorage(blobOrFile, prefix) {
+  const uid = auth.currentUser?.uid || "anon";
+  const path = `employee_photos/${uid}_${Date.now()}_${prefix}.jpg`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, blobOrFile);
+  return getDownloadURL(storageRef);
+}
+
 async function addEmployeeInfo() {
   hideMessage();
   const fullName = document.getElementById("empFullName")?.value?.trim();
@@ -320,8 +434,10 @@ async function addEmployeeInfo() {
   const accountHolderName = document.getElementById("empAccountHolderName")?.value?.trim() || null;
   const personalIdType = document.getElementById("empPersonalIdType")?.value?.trim() || null;
   const personalIdNumber = document.getElementById("empPersonalIdNumber")?.value?.trim() || null;
-  const personalIdPhotoUrl = document.getElementById("empIdPhotoUrl")?.value?.trim() || null;
-  const photoUrl = document.getElementById("empPhotoUrl")?.value?.trim() || null;
+  let personalIdPhotoUrl = document.getElementById("empIdPhotoUrl")?.value?.trim() || null;
+  let photoUrl = document.getElementById("empPhotoUrl")?.value?.trim() || null;
+  const idFile = document.getElementById("empIdPhotoFile");
+  const photoFile = document.getElementById("empPhotoFile");
 
   if (email && !isValidEmail(email)) {
     showMessage("Please enter a valid email address.", true);
@@ -339,11 +455,13 @@ async function addEmployeeInfo() {
     showMessage("Personal ID number must be at least 5 alphanumeric characters.", true);
     return;
   }
-  if (personalIdPhotoUrl && !isValidUrl(personalIdPhotoUrl)) {
+  const hasIdPhotoUpload = empIdPhotoBlob || (idFile?.files?.length && idFile.files[0]);
+  const hasPhotoUpload = empPhotoBlob || (photoFile?.files?.length && photoFile.files[0]);
+  if (!hasIdPhotoUpload && personalIdPhotoUrl && !isValidUrl(personalIdPhotoUrl)) {
     showMessage("Please enter a valid personal ID photo URL (https://, http://, or data:image/*).", true);
     return;
   }
-  if (photoUrl && !isValidUrl(photoUrl)) {
+  if (!hasPhotoUpload && photoUrl && !isValidUrl(photoUrl)) {
     showMessage("Please enter a valid photo URL (https://, http://, or data:image/*).", true);
     return;
   }
@@ -354,6 +472,15 @@ async function addEmployeeInfo() {
     submitBtn.textContent = "Adding…";
   }
   try {
+    if (hasIdPhotoUpload) {
+      const blobOrFile = empIdPhotoBlob || idFile.files[0];
+      personalIdPhotoUrl = await uploadEmpPhotoToStorage(blobOrFile, "id");
+    }
+    if (hasPhotoUpload) {
+      const blobOrFile = empPhotoBlob || photoFile.files[0];
+      photoUrl = await uploadEmpPhotoToStorage(blobOrFile, "employee");
+    }
+
     const empData = {
       fullName,
       phone,
@@ -365,8 +492,8 @@ async function addEmployeeInfo() {
       accountHolderName,
       personalIdType,
       personalIdNumber,
-      personalIdPhotoUrl,
-      photoUrl,
+      personalIdPhotoUrl: personalIdPhotoUrl || null,
+      photoUrl: photoUrl || null,
     };
 
     if (editingEmployeeId) {
@@ -407,6 +534,12 @@ async function addEmployeeInfo() {
     }
 
     addEmployeeInfoForm?.reset();
+    empIdPhotoBlob = null;
+    empPhotoBlob = null;
+    if (idFile) idFile.value = "";
+    if (photoFile) photoFile.value = "";
+    updateEmpPhotoPreview("empIdPhotoPreview", null, null);
+    updateEmpPhotoPreview("empPhotoPreview", null, null);
     loadEmployeeRecords();
   } catch (err) {
     showMessage("Failed to add: " + (err.message || err), true);
@@ -641,6 +774,14 @@ function prepareEditEmployee(emp) {
   if (document.getElementById("empPersonalIdNumber")) document.getElementById("empPersonalIdNumber").value = emp.personalIdNumber || "";
   if (document.getElementById("empIdPhotoUrl")) document.getElementById("empIdPhotoUrl").value = emp.personalIdPhotoUrl || "";
   if (document.getElementById("empPhotoUrl")) document.getElementById("empPhotoUrl").value = emp.photoUrl || "";
+  empIdPhotoBlob = null;
+  empPhotoBlob = null;
+  const idFileEl = document.getElementById("empIdPhotoFile");
+  const photoFileEl = document.getElementById("empPhotoFile");
+  if (idFileEl) idFileEl.value = "";
+  if (photoFileEl) photoFileEl.value = "";
+  updateEmpPhotoPreview("empIdPhotoPreview", null, emp.personalIdPhotoUrl || null);
+  updateEmpPhotoPreview("empPhotoPreview", null, emp.photoUrl || null);
 
   const submitBtn = addEmployeeInfoForm?.querySelector('button[type="submit"]');
   if (submitBtn) submitBtn.textContent = "Update Employee";
@@ -1510,6 +1651,14 @@ function init() {
       if (target === "block-add-employee-form") {
         editingEmployeeId = null;
         addEmployeeInfoForm?.reset();
+        empIdPhotoBlob = null;
+        empPhotoBlob = null;
+        const idFileEl = document.getElementById("empIdPhotoFile");
+        const photoFileEl = document.getElementById("empPhotoFile");
+        if (idFileEl) idFileEl.value = "";
+        if (photoFileEl) photoFileEl.value = "";
+        updateEmpPhotoPreview("empIdPhotoPreview", null, null);
+        updateEmpPhotoPreview("empPhotoPreview", null, null);
         const submitBtn = addEmployeeInfoForm?.querySelector('button[type="submit"]');
         if (submitBtn) submitBtn.textContent = "Add employee (info only)";
       }
@@ -1573,6 +1722,8 @@ function init() {
       addEmployeeInfo();
     });
   }
+
+  setupEmpPhotoListeners();
 
   document.getElementById("fibreName")?.addEventListener("change", () => {
     toggleOtherFibreInput();

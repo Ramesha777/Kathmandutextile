@@ -238,11 +238,21 @@
               <button type="button" class="modal-close" id="modal-close-share">&times;</button>
             </div>
             <div class="modal-body">
-              <p>How would you like to share the payslip?</p>
-              <div class="modal-actions">
-                <button type="button" class="btn btn-primary" id="btn-share-email">Email</button>
-                <button type="button" class="btn btn-primary" id="btn-share-whatsapp">WhatsApp</button>
+              <p>Get a download link to send to the employee:</p>
+              <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+                <button type="button" class="btn btn-primary" id="btn-get-payslip-link">Get Download Link</button>
+                <button type="button" class="btn btn-outline" id="btn-share-email">Download PDF</button>
                 <button type="button" class="btn btn-outline" id="btn-cancel-share">Cancel</button>
+              </div>
+              <div id="payslip-link-result" style="display:none;margin-top:1rem;">
+                <label style="font-size:0.85rem;color:#94a3b8;">Download URL (copy or send via SMS/WhatsApp/Email):</label>
+                <div style="display:flex;gap:0.5rem;margin-top:0.25rem;flex-wrap:wrap;">
+                  <input type="text" id="payslip-download-url" readonly style="flex:1;min-width:200px;padding:0.5rem 0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#f0f4ff;font-size:0.85rem;">
+                  <button type="button" class="btn btn-primary" id="btn-copy-payslip-url">Copy</button>
+                  <button type="button" class="btn btn-outline" id="btn-payslip-sms" title="Send via SMS">📱 SMS</button>
+                  <button type="button" class="btn btn-outline" id="btn-payslip-whatsapp" title="Send via WhatsApp">WhatsApp</button>
+                  <button type="button" class="btn btn-outline" id="btn-payslip-mail" title="Send via Email">✉️ Mail</button>
+                </div>
               </div>
             </div>
           </div>
@@ -355,10 +365,21 @@
         <input type="text" id="invoice-authorised-signature" placeholder="e.g. Ram Sharma" style="width:100%;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#f0f4ff;">
       </div>
     </div>
-    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
+    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;flex-wrap:wrap;">
       <button class="btn btn-outline" id="invoice-signature-modal-cancel">Cancel</button>
       <button class="btn btn-primary" id="invoice-signature-modal-preview">👁️ Preview</button>
       <button class="btn btn-primary" id="invoice-signature-modal-generate">🖨️ Download PDF</button>
+      <button class="btn btn-primary" id="invoice-signature-modal-getlink">🔗 Get Download Link</button>
+    </div>
+    <div id="invoice-link-result" style="display:none;padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+      <label style="font-size:0.85rem;color:#94a3b8;">Download URL (copy or send via SMS/WhatsApp/Email):</label>
+      <div style="display:flex;gap:0.5rem;margin-top:0.25rem;flex-wrap:wrap;">
+        <input type="text" id="invoice-download-url" readonly style="flex:1;min-width:200px;padding:0.5rem 0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#f0f4ff;font-size:0.85rem;">
+        <button type="button" class="btn btn-primary" id="btn-copy-invoice-url">Copy</button>
+        <button type="button" class="btn btn-outline" id="btn-invoice-sms" title="Send via SMS">📱 SMS</button>
+        <button type="button" class="btn btn-outline" id="btn-invoice-whatsapp" title="Send via WhatsApp">WhatsApp</button>
+        <button type="button" class="btn btn-outline" id="btn-invoice-mail" title="Send via Email">✉️ Mail</button>
+      </div>
     </div>
   </div>
 </div>
@@ -394,9 +415,20 @@
         <button type="button" class="btn btn-primary" id="preview-apply-btn">Apply</button>
       </div>
     </div>
-    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;padding:0.75rem 1.25rem;">
+    <div id="invoice-preview-link-result" style="display:none;padding:1rem 1.25rem;border-top:1px solid rgba(255,255,255,0.06);">
+      <label style="font-size:0.85rem;color:#94a3b8;">Download URL (copy or send via SMS/WhatsApp/Email):</label>
+      <div style="display:flex;gap:0.5rem;margin-top:0.25rem;flex-wrap:wrap;">
+        <input type="text" id="invoice-preview-download-url" readonly style="flex:1;min-width:200px;padding:0.5rem 0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#f0f4ff;font-size:0.85rem;">
+        <button type="button" class="btn btn-primary" id="btn-copy-invoice-preview-url">Copy</button>
+        <button type="button" class="btn btn-outline" id="btn-invoice-preview-sms" title="Send via SMS">📱 SMS</button>
+        <button type="button" class="btn btn-outline" id="btn-invoice-preview-whatsapp" title="Send via WhatsApp">WhatsApp</button>
+        <button type="button" class="btn btn-outline" id="btn-invoice-preview-mail" title="Send via Email">✉️ Mail</button>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;padding:0.75rem 1.25rem;flex-wrap:wrap;">
       <button class="btn btn-outline" id="invoice-preview-close-btn">Close</button>
       <button class="btn btn-primary" id="invoice-preview-download-btn">🖨️ Download PDF</button>
+      <button class="btn btn-primary" id="invoice-preview-getlink-btn">🔗 Get Download Link</button>
     </div>
   </div>
 </div>
