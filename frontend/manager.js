@@ -89,12 +89,50 @@ const btnConfirmWageDelete = document.getElementById('btn-confirm-delete');
 const btnCancelWageDelete = document.getElementById('btn-cancel-delete');
 const modalCloseWageDelete = document.getElementById('modal-close-delete');
 
+// Wage edit modal elements
+const editWageModal = document.getElementById('edit-wage-modal');
+const modalCloseWageEdit = document.getElementById('modal-close-wage-edit');
+const btnCancelWageEdit = document.getElementById('btn-cancel-wage-edit');
+const btnSaveWageEdit = document.getElementById('btn-save-wage-edit');
+const editWageId = document.getElementById('edit-wage-id');
+const editWageDate = document.getElementById('edit-wage-date');
+const editWageEmployee = document.getElementById('edit-wage-employee');
+const editWageEmployeeId = document.getElementById('edit-wage-employee-id');
+const editWageDept = document.getElementById('edit-wage-dept');
+const editWageItem = document.getElementById('edit-wage-item');
+const editWageQty = document.getElementById('edit-wage-qty');
+const editWageUnit = document.getElementById('edit-wage-unit');
+const editWageRate = document.getElementById('edit-wage-rate');
+const editWageOT = document.getElementById('edit-wage-ot');
+const editWageBonus = document.getElementById('edit-wage-bonus');
+const editWageDeduct = document.getElementById('edit-wage-deduct');
+const editWageTax = document.getElementById('edit-wage-tax');
+const editWageNetPreview = document.getElementById('edit-wage-net-preview');
+
 let deleteInventoryId = null;
 const deleteInventoryModal = document.getElementById('delete-inventory-modal');
 const deleteInventoryDetails = document.getElementById('delete-inventory-details');
 const btnConfirmInventoryDelete = document.getElementById('btn-confirm-inventory-delete');
 const btnCancelInventoryDelete = document.getElementById('btn-cancel-inventory-delete');
 const modalCloseInventoryDelete = document.getElementById('modal-close-inventory-delete');
+
+// Inventory edit modal elements
+const editInventoryModal = document.getElementById('edit-inventory-modal');
+const modalCloseInventoryEdit = document.getElementById('modal-close-inventory-edit');
+const btnCancelInventoryEdit = document.getElementById('btn-cancel-inventory-edit');
+const btnSaveInventoryEdit = document.getElementById('btn-save-inventory-edit');
+const editInvId = document.getElementById('edit-inv-id');
+const editInvBarcode = document.getElementById('edit-inv-barcode');
+const editInvName = document.getElementById('edit-inv-name');
+const editInvCategory = document.getElementById('edit-inv-category');
+const editInvQty = document.getElementById('edit-inv-qty');
+const editInvUnit = document.getElementById('edit-inv-unit');
+const editInvStorage = document.getElementById('edit-inv-storage');
+const editInvVendorName = document.getElementById('edit-inv-vendor-name');
+const editInvVendorContact = document.getElementById('edit-inv-vendor-contact');
+const editInvVendorAddress = document.getElementById('edit-inv-vendor-address');
+const editInvPurchaseDate = document.getElementById('edit-inv-purchase-date');
+const editInvExpiryDate = document.getElementById('edit-inv-expiry-date');
 
 let managerInventoryItems = [];
 let managerUserNameByUid = {};
@@ -234,25 +272,25 @@ function renderEmployeeTable(empList) {
   
   empList.forEach(e => {
     const tr = document.createElement('tr');
+    tr.classList.add('manager-employee-row');
+    tr.dataset.id = e.id || '';
+    tr.style.cursor = 'pointer';
     tr.innerHTML = `
       <td>${escapeHtml(e.id || '—')}</td>
       <td>${escapeHtml(e.fullName||e.name||'—')}</td>
       <td>${escapeHtml(e.email||'—')}</td>
       <td>${escapeHtml(e.department||'—')}</td>
       <td>${escapeHtml(e.position||'—')}</td>
-      <td><button type="button" class="btn btn-sm btn-primary btn-view-employee" data-id="${e.id}">View</button></td>
     `;
     tblEmployeesBody.appendChild(tr);
   });
   
-  // Add click listeners to view buttons
-  tblEmployeesBody.querySelectorAll('.btn-view-employee').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const empId = btn.getAttribute('data-id');
+  // Row click opens employee modal
+  tblEmployeesBody.querySelectorAll('tr.manager-employee-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const empId = row.dataset.id;
       const emp = employees.find(e => e.id === empId);
-      if (emp) {
-        showEmployeeModal(emp);
-      }
+      if (emp) showEmployeeModal(emp);
     });
   });
 }
@@ -476,6 +514,54 @@ async function isEmployeeOnHolidayOnDate(empId, dateStr, holidaysCache) {
   return false;
 }
 
+// If the wage entry represents raw material used (Machine Operators),
+// automatically reduce the raw material quantity into inventory.
+async function upsertInventoryFromMachineOperatorWage({ itemName, qty, unit, dateStr }) {
+  const cleanName = String(itemName || '').trim();
+  const amount = Number(qty);
+  if (!cleanName || !(amount > 0)) return { success: false, message: 'No inventory update: invalid item/qty.' };
+
+  // Load inventory and find best match by name (prefer raw material).
+  const snap = await getDocs(collection(db, 'inventory'));
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const target =
+    all.find(x => norm(x.name) === norm(cleanName) && norm(x.category) === 'finished product') ||
+    all.find(x => norm(x.name) === norm(cleanName));
+
+  if (target) {
+    const currentQty = Number(target.quantity) || 0;
+    const newQty = currentQty - amount;
+    await updateDoc(doc(db, 'inventory', target.id), {
+      quantity: newQty,
+      unit: unit || target.unit || null,
+      updatedAt: serverTimestamp()
+    });
+    return { success: true, updated: true, created: false, newQty };
+  }
+
+  // If not found, create a new inventory item so the workflow is automatic.
+  const safeToken = cleanName.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'item';
+  const barcode = `AUTO-MO-${(dateStr || '').replace(/[^0-9-]/g, '') || 'date'}-${safeToken}-${Date.now().toString().slice(-6)}`;
+  await addDoc(collection(db, 'inventory'), {
+    barcode,
+    name: cleanName,
+    category: 'finished product',
+    quantity: amount,
+    unit: unit || null,
+    vendorName: null,
+    vendorContact: null,
+    vendorAddress: null,
+    purchaseDate: dateStr || null,
+    expiryDate: null,
+    storageArea: null,
+    createdBy: auth.currentUser?.uid || null,
+    createdByName: auth.currentUser?.displayName || auth.currentUser?.uid || null,
+    createdAt: serverTimestamp()
+  });
+  return { success: true, updated: false, created: true };
+}
+
 // Save wage entry
 async function saveWageEntry() {
   const empId = inpEmployeeId?.value?.trim();
@@ -514,6 +600,23 @@ async function saveWageEntry() {
       employeeId: empId, employeeName, date: dateVal, department, item,
       qty, unit, rate, ot, bonus, deduct, tax, net
     });
+
+    // Auto inventory update for Machine Operators output
+    if (String(department).trim() === 'Machine Operators') {
+      try {
+        const invRes = await upsertInventoryFromMachineOperatorWage({ itemName: item, qty, unit, dateStr: dateVal });
+        if (invRes?.success) {
+          // Refresh inventory view if manager is currently on inventory panel
+          if (managerInventoryListEl) loadManagerInventory();
+          if (invRes.created) showToast(`Inventory created for "${item}" (+${qty} ${unit}).`, 'success');
+          else showToast(`Inventory updated for "${item}" (+${qty} ${unit}).`, 'success');
+        }
+      } catch (invErr) {
+        console.warn('Inventory update after wage save failed:', invErr);
+        showToast('Wage saved, but inventory update failed: ' + (invErr.message || invErr), 'error');
+      }
+    }
+
     showToast('Wage entry saved.', 'success');
     loadWageEntries();
     if (btnClear) btnClear.click();
@@ -585,6 +688,92 @@ function closeInventoryDeleteModal() {
   if (deleteInventoryModal) deleteInventoryModal.style.display = 'none';
 }
 
+function openInventoryEditModal(btn) {
+  const id = btn?.dataset?.id;
+  if (!id || !editInventoryModal) return;
+  const inv = managerInventoryItems.find(x => x.id === id);
+  if (!inv) {
+    showToast('Inventory item not found. Please refresh.', 'error');
+    return;
+  }
+  if (editInvId) editInvId.value = inv.id;
+  if (editInvBarcode) editInvBarcode.value = inv.barcode || '';
+  if (editInvName) editInvName.value = inv.name || '';
+  if (editInvCategory) editInvCategory.value = inv.category || '';
+  if (editInvQty) editInvQty.value = (inv.quantity != null && !isNaN(Number(inv.quantity))) ? String(Number(inv.quantity)) : '';
+  if (editInvUnit) editInvUnit.value = inv.unit || inv.units || '';
+  if (editInvStorage) editInvStorage.value = inv.storageArea || '';
+  if (editInvVendorName) editInvVendorName.value = inv.vendorName || '';
+  if (editInvVendorContact) editInvVendorContact.value = inv.vendorContact || '';
+  if (editInvVendorAddress) editInvVendorAddress.value = inv.vendorAddress || '';
+  if (editInvPurchaseDate) editInvPurchaseDate.value = inv.purchaseDate || '';
+  if (editInvExpiryDate) editInvExpiryDate.value = inv.expiryDate || '';
+
+  editInventoryModal.style.display = 'flex';
+}
+
+function closeInventoryEditModal() {
+  if (!editInventoryModal) return;
+  editInventoryModal.style.display = 'none';
+  if (editInvId) editInvId.value = '';
+}
+
+async function saveInventoryEdits() {
+  const id = editInvId?.value?.trim();
+  if (!id) return;
+  const barcode = editInvBarcode?.value?.trim() || '';
+  const name = editInvName?.value?.trim() || '';
+  const category = editInvCategory?.value?.trim() || '';
+  const qtyRaw = editInvQty?.value?.trim();
+  const qty = qtyRaw === '' || qtyRaw == null ? null : Number(qtyRaw);
+  const unit = editInvUnit?.value?.trim() || null;
+  const storageArea = editInvStorage?.value?.trim() || null;
+  const vendorName = editInvVendorName?.value?.trim() || null;
+  const vendorContact = editInvVendorContact?.value?.trim() || null;
+  const vendorAddress = editInvVendorAddress?.value?.trim() || null;
+  const purchaseDate = editInvPurchaseDate?.value || null;
+  const expiryDate = editInvExpiryDate?.value || null;
+
+  if (!barcode || !name || !category) {
+    showToast('Please fill Barcode/ID, Name and Category.', 'error');
+    return;
+  }
+  if (qty !== null && (isNaN(qty) || qty < 0)) {
+    showToast('Please enter a valid quantity (0 or more).', 'error');
+    return;
+  }
+
+  const btn = btnSaveInventoryEdit;
+  const originalText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    await updateDoc(doc(db, 'inventory', id), {
+      barcode,
+      name,
+      category,
+      quantity: qty,
+      unit,
+      storageArea,
+      vendorName,
+      vendorContact,
+      vendorAddress,
+      purchaseDate,
+      expiryDate,
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null,
+      updatedByName: auth.currentUser?.displayName || auth.currentUser?.uid || null,
+    });
+    showToast('Inventory updated successfully.', 'success');
+    closeInventoryEditModal();
+    await loadManagerInventory();
+  } catch (err) {
+    console.error('Failed to update inventory:', err);
+    showToast('Failed to update inventory: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalText || 'Save changes'; }
+  }
+}
+
 async function confirmDeleteInventory() {
   if (!deleteInventoryId) return;
 
@@ -630,6 +819,16 @@ if (deleteInventoryModal) {
   });
 }
 
+// ── Inventory edit modal event listeners ──
+if (btnSaveInventoryEdit) btnSaveInventoryEdit.addEventListener('click', saveInventoryEdits);
+if (btnCancelInventoryEdit) btnCancelInventoryEdit.addEventListener('click', closeInventoryEditModal);
+if (modalCloseInventoryEdit) modalCloseInventoryEdit.addEventListener('click', closeInventoryEditModal);
+if (editInventoryModal) {
+  editInventoryModal.addEventListener('click', (e) => {
+    if (e.target === editInventoryModal) closeInventoryEditModal();
+  });
+}
+
 // Load manager inventory
 async function loadManagerInventory() {
   if (!managerInventoryListEl) return;
@@ -668,12 +867,21 @@ function renderManagerInventory() {
       <tbody>`;
   for (const x of items) {
     const qty = x.quantity != null ? x.quantity : '—';
+    const numQty = typeof x.quantity === 'number' && !isNaN(x.quantity) ? x.quantity : null;
+    const rowClass = numQty != null
+      ? (numQty < 30 ? 'inv-row-low' : numQty < 60 ? 'inv-row-warning' : 'inv-row-ok')
+      : '';
+    let qtyCellClass = 'inventory-qty';
+    if (numQty != null) {
+      if (numQty < 30) qtyCellClass += ' low-stock';
+      else if (numQty < 60) qtyCellClass += ' warning-stock';
+    }
     html += `
-      <tr>
+      <tr class="${rowClass} manager-inv-row" data-id="${x.id}" style="cursor:pointer;">
         <td>${escapeHtml(x.barcode)}</td>
         <td>${escapeHtml(x.name)}</td>
         <td>${escapeHtml(x.category)}</td>
-        <td>${escapeHtml(qty)}</td>
+        <td class="${qtyCellClass}">${escapeHtml(qty)}</td>
         <td>${escapeHtml(x.unit || x.units || '—')}</td>
         <td>${escapeHtml(x.vendorName || '—')}</td>
         <td>${escapeHtml(x.storageArea || '—')}</td>
@@ -696,6 +904,16 @@ function renderManagerInventory() {
   // Attach delete listeners
   managerInventoryListEl.querySelectorAll('.btn-delete-inventory').forEach(btn => {
     btn.addEventListener('click', () => openInventoryDeleteModal(btn));
+  });
+
+  // Row click opens edit modal (except delete button)
+  managerInventoryListEl.querySelectorAll('tr.manager-inv-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target?.closest?.('.btn-delete-inventory')) return;
+      const id = row.dataset.id;
+      if (!id) return;
+      openInventoryEditModal({ dataset: { id } });
+    });
   });
 }
 
@@ -1901,6 +2119,128 @@ if (deleteWageModal) {
   });
 }
 
+function calcNetWage({ qty, rate, ot, bonus, deduct, tax }) {
+  const nQty = Number(qty) || 0;
+  const nRate = Number(rate) || 0;
+  const nOt = Number(ot) || 0;
+  const nBonus = Number(bonus) || 0;
+  const nDeduct = Number(deduct) || 0;
+  const nTax = Number(tax) || 0;
+  return (nQty * nRate) + (nOt * nRate) + nBonus - nDeduct - nTax;
+}
+
+function updateEditWageNetPreview() {
+  if (!editWageNetPreview) return;
+  const net = calcNetWage({
+    qty: editWageQty?.value,
+    rate: editWageRate?.value,
+    ot: editWageOT?.value,
+    bonus: editWageBonus?.value,
+    deduct: editWageDeduct?.value,
+    tax: editWageTax?.value
+  });
+  editWageNetPreview.textContent = `Rs. ${Number(net || 0).toLocaleString()}`;
+}
+
+function openEditWageModalById(id) {
+  if (!id || !editWageModal) return;
+  const w = allWageEntries.find(x => x.id === id);
+  if (!w) {
+    showToast('Wage entry not found. Please refresh.', 'error');
+    return;
+  }
+  const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
+  if (editWageId) editWageId.value = w.id;
+  if (editWageDate) editWageDate.value = (w.date || '').trim();
+  if (editWageEmployee) editWageEmployee.value = empName;
+  if (editWageEmployeeId) editWageEmployeeId.value = w.employeeId || '';
+  if (editWageDept) editWageDept.value = w.department || '';
+  if (editWageItem) editWageItem.value = w.item || '';
+  if (editWageQty) editWageQty.value = w.qty != null ? String(w.qty) : '';
+  if (editWageUnit) editWageUnit.value = w.unit || '';
+  if (editWageRate) editWageRate.value = w.rate != null ? String(w.rate) : '';
+  if (editWageOT) editWageOT.value = w.ot != null ? String(w.ot) : '0';
+  if (editWageBonus) editWageBonus.value = w.bonus != null ? String(w.bonus) : '0';
+  if (editWageDeduct) editWageDeduct.value = w.deduct != null ? String(w.deduct) : '0';
+  if (editWageTax) editWageTax.value = w.tax != null ? String(w.tax) : '0';
+
+  updateEditWageNetPreview();
+  editWageModal.style.display = 'flex';
+}
+
+function closeEditWageModal() {
+  if (!editWageModal) return;
+  editWageModal.style.display = 'none';
+  if (editWageId) editWageId.value = '';
+}
+
+async function saveWageEdits() {
+  const id = editWageId?.value?.trim();
+  if (!id) return;
+
+  const date = editWageDate?.value?.trim() || '';
+  const department = editWageDept?.value?.trim() || '';
+  const item = editWageItem?.value?.trim() || '';
+  const qty = Number(editWageQty?.value) || 0;
+  const unit = editWageUnit?.value?.trim() || '';
+  const rate = Number(editWageRate?.value) || 0;
+  const ot = Number(editWageOT?.value) || 0;
+  const bonus = Number(editWageBonus?.value) || 0;
+  const deduct = Number(editWageDeduct?.value) || 0;
+  const tax = Number(editWageTax?.value) || 0;
+  const net = calcNetWage({ qty, rate, ot, bonus, deduct, tax });
+
+  if (!date || !department || !item) {
+    showToast('Please fill Date, Department and Item.', 'error');
+    return;
+  }
+
+  const btn = btnSaveWageEdit;
+  const originalText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    // Keep employeeId/employeeName unchanged here to avoid accidental reassignment.
+    await updateDoc(doc(db, 'wageEntries', id), {
+      date,
+      department,
+      item,
+      qty,
+      unit,
+      rate,
+      ot,
+      bonus,
+      deduct,
+      tax,
+      net,
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null,
+      updatedByName: auth.currentUser?.displayName || auth.currentUser?.uid || null,
+    });
+    showToast('Wage entry updated.', 'success');
+    closeEditWageModal();
+    await loadWageEntries();
+  } catch (err) {
+    console.error('Failed to update wage entry:', err);
+    showToast('Failed to update wage entry: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalText || 'Save changes'; }
+  }
+}
+
+// Wage edit modal event listeners
+if (btnSaveWageEdit) btnSaveWageEdit.addEventListener('click', saveWageEdits);
+if (btnCancelWageEdit) btnCancelWageEdit.addEventListener('click', closeEditWageModal);
+if (modalCloseWageEdit) modalCloseWageEdit.addEventListener('click', closeEditWageModal);
+if (editWageModal) {
+  editWageModal.addEventListener('click', (e) => {
+    if (e.target === editWageModal) closeEditWageModal();
+  });
+}
+// Live net preview
+[editWageQty, editWageRate, editWageOT, editWageBonus, editWageDeduct, editWageTax].forEach(el => {
+  if (el) el.addEventListener('input', updateEditWageNetPreview);
+});
+
 async function loadWageEntries() {
   if (!tblWageEntriesBody) return;
   try {
@@ -1916,6 +2256,9 @@ async function loadWageEntries() {
     entries.forEach(w => {
       const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
       const tr = document.createElement('tr');
+      tr.classList.add('manager-wage-row');
+      tr.dataset.id = w.id;
+      tr.style.cursor = 'pointer';
       tr.innerHTML = `
         <td>${escapeHtml(w.date || '—')}</td><td>${escapeHtml(empName)}</td><td>${escapeHtml(w.employeeId || '—')}</td>
         <td>${escapeHtml(w.department || '—')}</td><td>${escapeHtml(w.item || '—')}</td><td>${w.qty || 0}</td>
@@ -1926,6 +2269,16 @@ async function loadWageEntries() {
     });
     tblWageEntriesBody.querySelectorAll('.btn-delete-wage').forEach(btn => {
       btn.addEventListener('click', () => openDeleteWageModal(btn));
+    });
+
+    // Row click opens edit modal (except delete button)
+    tblWageEntriesBody.querySelectorAll('tr.manager-wage-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target?.closest?.('.btn-delete-wage')) return;
+        const id = row.dataset.id;
+        if (!id) return;
+        openEditWageModalById(id);
+      });
     });
   } catch (err) {
     console.error('Failed to load wage entries:', err);

@@ -171,7 +171,7 @@
             <input type="text" id="employee-search" placeholder="Search by ID or Name..." class="employee-search-input">
           </div>
           <table id="tbl-employees" class="manager-table">
-            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Department</th><th>Position</th><th>Action</th></tr></thead>
+            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Department</th><th>Position</th></tr></thead>
             <tbody></tbody>
           </table>
         </section>
@@ -352,6 +352,82 @@
   </div>
 </div>
 
+  <!-- Edit Wage Modal -->
+  <div class="modal-overlay" id="edit-wage-modal" style="display:none;">
+    <div class="modal-card" style="max-width:740px;">
+      <div class="modal-header">
+        <h3 style="margin:0;color:#f0f4ff;">✏️ Update Wage Entry</h3>
+        <button class="modal-close-btn" id="modal-close-wage-edit">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:1.1rem 1.5rem;">
+        <p style="color:#94a3b8;margin:0 0 0.9rem;">Click Save to update this wage entry.</p>
+
+        <input type="hidden" id="edit-wage-id">
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label for="edit-wage-date">Date</label>
+            <input type="date" id="edit-wage-date">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-employee">Employee</label>
+            <input type="text" id="edit-wage-employee" readonly style="opacity:0.85;">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-employee-id">Employee ID</label>
+            <input type="text" id="edit-wage-employee-id" readonly style="opacity:0.85;">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-dept">Department</label>
+            <input type="text" id="edit-wage-dept" placeholder="Machine Operators / Production / Daily Workers">
+          </div>
+          <div class="form-group" style="grid-column:1 / -1;">
+            <label for="edit-wage-item">Item / Work Type</label>
+            <input type="text" id="edit-wage-item" placeholder="Work item">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-qty">Qty</label>
+            <input type="number" id="edit-wage-qty" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-unit">Unit</label>
+            <input type="text" id="edit-wage-unit" placeholder="piece / meter / hour">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-rate">Rate</label>
+            <input type="number" id="edit-wage-rate" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-ot">OT</label>
+            <input type="number" id="edit-wage-ot" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-bonus">Bonus</label>
+            <input type="number" id="edit-wage-bonus" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-deduct">Deduct</label>
+            <input type="number" id="edit-wage-deduct" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label for="edit-wage-tax">Tax</label>
+            <input type="number" id="edit-wage-tax" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="grid-column:1 / -1;">
+            <label>Net (auto)</label>
+            <div id="edit-wage-net-preview" style="padding:0.6rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f59e0b;font-weight:700;">
+              Rs. 0
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:0.8rem;justify-content:flex-end;padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+        <button class="btn-secondary" id="btn-cancel-wage-edit" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;cursor:pointer;font-size:0.85rem;">Cancel</button>
+        <button class="btn-primary" id="btn-save-wage-edit" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(59,130,246,0.55);background:#3b82f6;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;">Save changes</button>
+      </div>
+    </div>
+  </div>
+
 <!-- Invoice Signature Modal (before preview/download) -->
 <div id="invoice-signature-modal" class="modal-overlay" style="display:none;">
   <div class="modal-card" style="max-width:400px;">
@@ -444,8 +520,7 @@
         Have you resolved this damage/problem? This action will permanently remove the report.
       </p>
     </div>
-    <div id="delete-damage-details" style="background:rgba(0,0,0,0.25);border-radius:8px;padding Ascending: true
-padding:12px 16px;margin-bottom:1.2rem;"></div>
+    <div id="delete-damage-details" style="background:rgba(0,0,0,0.25);border-radius:8px;padding:12px 16px;margin-bottom:1.2rem;"></div>
     <div style="display:flex;gap:12px;justify-content:flex-end;">
       <button type="button" class="btn btn-secondary" id="btn-cancel-damage-delete">No, Keep it</button>
       <button type="button" class="btn btn-success" id="btn-confirm-damage-delete" style="background:#22c55e;border-color:#22c55e;">Yes, Problem Solved</button>
@@ -491,14 +566,75 @@ padding:12px 16px;margin-bottom:1.2rem;"></div>
       <p>This action cannot be undone.</p>
 
     </div>
-    <div class="modal-footer" style="display:flex;gap:0.8rem;justify-content:flex-end;padding Ascending: true
-padding:1rem 1.5rem;border-top:1px solid rgba(255 Ascending: true
-border-top:1px solid rgba(255,255,255,0.06);">
-      <button class="btn-secondary" Ascending: true
-id="btn-cancel-inventory-delete" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255 Ascending: true
-background:rgba(255,255,255,0.05);color:#cbd5e1;cursor:pointer;font-size:0.85rem;">Cancel</button>
-      <button class="btn-danger" id="btn-confirm-inventory-delete" style="padding:8px 20px;border-radius:8px;border Ascending: true
-border:1px solid #ef4444;background:#ef4444;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;">Delete</button>
+    <div class="modal-footer" style="display:flex;gap:0.8rem;justify-content:flex-end;padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+      <button class="btn-secondary" id="btn-cancel-inventory-delete" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;cursor:pointer;font-size:0.85rem;">Cancel</button>
+      <button class="btn-danger" id="btn-confirm-inventory-delete" style="padding:8px 20px;border-radius:8px;border:1px solid #ef4444;background:#ef4444;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Inventory Modal -->
+<div id="edit-inventory-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-card" style="max-width:640px;">
+    <div class="modal-header">
+      <h3>✏️ Update Inventory Item</h3>
+      <button class="modal-close-btn" id="modal-close-inventory-edit">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:1.1rem 1.5rem;">
+      <p style="color:#94a3b8;margin:0 0 0.9rem;">Update the fields below and save to apply changes.</p>
+
+      <input type="hidden" id="edit-inv-id">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label for="edit-inv-barcode">Barcode / ID</label>
+          <input type="text" id="edit-inv-barcode" placeholder="e.g. INV-001">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-name">Name</label>
+          <input type="text" id="edit-inv-name" placeholder="Product name">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-category">Category</label>
+          <input type="text" id="edit-inv-category" placeholder="e.g. finished product">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-qty">Quantity</label>
+          <input type="number" id="edit-inv-qty" min="0" step="0.01" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-unit">Unit</label>
+          <input type="text" id="edit-inv-unit" placeholder="e.g. piece / meter / kg">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-storage">Storage area</label>
+          <input type="text" id="edit-inv-storage" placeholder="e.g. Godown A">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-vendor-name">Vendor name</label>
+          <input type="text" id="edit-inv-vendor-name" placeholder="Vendor or supplier name">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-vendor-contact">Vendor contact</label>
+          <input type="text" id="edit-inv-vendor-contact" placeholder="Phone or email">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+          <label for="edit-inv-vendor-address">Vendor address</label>
+          <input type="text" id="edit-inv-vendor-address" placeholder="Address">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-purchase-date">Purchase date</label>
+          <input type="date" id="edit-inv-purchase-date">
+        </div>
+        <div class="form-group">
+          <label for="edit-inv-expiry-date">Expiry date</label>
+          <input type="date" id="edit-inv-expiry-date">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:0.8rem;justify-content:flex-end;padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+      <button class="btn-secondary" id="btn-cancel-inventory-edit" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;cursor:pointer;font-size:0.85rem;">Cancel</button>
+      <button class="btn-primary" id="btn-save-inventory-edit" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(59,130,246,0.55);background:#3b82f6;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;">Save changes</button>
     </div>
   </div>
 </div>
@@ -506,25 +642,18 @@ border:1px solid #ef4444;background:#ef4444;color:#fff;cursor:pointer;font-size:
 <!-- Delete Order Confirmation Modal (NEW - inventory-style) -->
 <div id="delete-order-modal" class="modal-overlay" style="display:none;">
   <div class="modal-card" style="max-width:460px;">
-    <div class="modal Ascending: true
-header">
+    <div class="modal-header">
       <h3 style="margin:0;color:#f0f4ff;">🗑️ Delete Order</h3>
       <button class="modal-close-btn" id="modal-close-order-delete">&times;</button>
     </div>
     <div class="modal-body" style="padding:1.2rem 1.5rem;">
-      <p style="color:#cbd Ascending: true
-p style="color:#cbd5e1;margin:0 0 0.5rem;">Are you sure you want to delete this order?</p>
-      <div id="delete-order-details" style="background:rgba(239,68,68,0.06);border: Ascending: true
-border:1px solid rgba(239,68,68,0.15);border-radius:8px;padding:0. Ascending: true
-padding:0.8rem 1rem;margin:0.8rem 0;font-size:0.85rem;color:#f87171;"></div>
+      <p style="color:#cbd5e1;margin:0 0 0.5rem;">Are you sure you want to delete this order?</p>
+      <div id="delete-order-details" style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);border-radius:8px;padding:0.8rem 1rem;margin:0.8rem 0;font-size:0.85rem;color:#f87171;"></div>
       <p style="color:#64748b;font-size:0.8rem;margin:0.5rem 0 0;">This action cannot be undone.</p>
     </div>
-    <div class="modal-footer" style="display:flex Ascending: true
-display:flex;gap:0.8rem;justify-content:flex-end;padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,0.06);">
-      <button class="btn-secondary" id="btn-cancel-order-delete" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5 Ascending: true
-color:#cbd5e1;cursor:pointer;font-size:0.85rem;">Cancel</button>
-      <button class="btn-danger" id="btn-confirm-order-delete" style="padding: Ascending: true
-padding:8px 20px;border-radius:8px;border:1px solid #ef4444;background:#ef4444;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;">Delete</button>
+    <div class="modal-footer" style="display:flex;gap:0.8rem;justify-content:flex-end;padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+      <button class="btn-secondary" id="btn-cancel-order-delete" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;cursor:pointer;font-size:0.85rem;">Cancel</button>
+      <button class="btn-danger" id="btn-confirm-order-delete" style="padding:8px 20px;border-radius:8px;border:1px solid #ef4444;background:#ef4444;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;">Delete</button>
     </div>
   </div>
 </div>

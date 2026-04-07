@@ -244,6 +244,109 @@ async function deleteAuthUserViaBackend(uid) {
   }
 }
 
+const NO_ROLE_LOGIN_MSG = "You don't have a role. Please contact an administrator.";
+
+function redirectToLoginNoRole() {
+  showMessage(NO_ROLE_LOGIN_MSG + " Redirecting to sign in…", true);
+  setTimeout(async () => {
+    try {
+      await signOut(auth);
+    } catch (_) {
+      /* ignore */
+    }
+    window.location.replace("login.html?msg=" + encodeURIComponent(NO_ROLE_LOGIN_MSG));
+  }, 1000);
+}
+
+/** Returns true only if current user has email + admin role in Firestore. Otherwise redirects to login when role/email is missing. */
+async function ensureCurrentUserAdminFirestoreOrRedirect() {
+  const user = auth.currentUser;
+  if (!user) {
+    redirectToLoginNoRole();
+    return false;
+  }
+  const snap = await getDoc(doc(db, "users", user.uid));
+  if (!snap.exists()) {
+    redirectToLoginNoRole();
+    return false;
+  }
+  const data = snap.data() || {};
+  const email = (data.email || "").trim();
+  const role = (data.role || "").trim();
+  if (!email || !role) {
+    redirectToLoginNoRole();
+    return false;
+  }
+  if (role !== "admin") {
+    showMessage("You don't have permission to remove users.", true);
+    return false;
+  }
+  return true;
+}
+
+async function removeUser(uid) {
+  hideMessage();
+  if (!uid) return;
+
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    redirectToLoginNoRole();
+    return;
+  }
+  if (uid === currentUser.uid) {
+    showMessage("You cannot remove yourself.", true);
+    return;
+  }
+
+  try {
+    if (!(await ensureCurrentUserAdminFirestoreOrRedirect())) return;
+
+    const targetRef = doc(db, "users", uid);
+    const targetSnap = await getDoc(targetRef);
+    if (!targetSnap.exists()) {
+      showMessage("User not found in Firestore (no email/role record). Remove cancelled.", true);
+      return;
+    }
+    const t = targetSnap.data() || {};
+    const targetEmail = (t.email || "").trim();
+    const targetRole = (t.role || "").trim();
+    if (!targetEmail || !targetRole) {
+      showMessage("Cannot remove: Firestore record must include both email and role.", true);
+      return;
+    }
+
+    if (!confirm(`Remove ${targetEmail} (${targetRole})? This will revoke their sign-in access.`)) return;
+
+    await deleteDoc(targetRef);
+
+    let authDeleteError = null;
+    try {
+      await deleteAuthUserViaBackend(uid);
+    } catch (e) {
+      authDeleteError = e;
+    }
+
+    if (authDeleteError) {
+      showMessage(
+        "User removed from app data. Firebase Auth account could not be deleted automatically: " +
+          (authDeleteError.message || authDeleteError) +
+          ". They may still sign in until the Auth user is removed in Firebase Console or the admin API is configured.",
+        false
+      );
+    } else {
+      showMessage("User removed.", false);
+    }
+
+    try {
+      await loadUsers();
+    } catch (loadErr) {
+      console.error("loadUsers after remove:", loadErr);
+    }
+  } catch (err) {
+    showMessage("Failed to remove user: " + (err.message || err), true);
+  }
+}
+
 async function addUser(email, password, role) {
   hideMessage();
   if (!email || !password || !role) {
