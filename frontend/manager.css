@@ -939,6 +939,22 @@ body.manager-page {
   border: 1px solid rgba(16,185,129,0.3);
 }
 
+.status-payment-paid {
+  background: rgba(56,189,248,0.14);
+  color: #7dd3fc;
+  border: 1px solid rgba(56,189,248,0.35);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.status-payment-unpaid {
+  background: rgba(148,163,184,0.12);
+  color: #cbd5e1;
+  border: 1px solid rgba(148,163,184,0.28);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
 /* Order Actions Dropdown */
 .order-actions-dropdown {
   position: relative;

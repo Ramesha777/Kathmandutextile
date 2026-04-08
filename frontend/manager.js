@@ -1,6 +1,11 @@
 // manager.js
 import { loadHolidayPanel } from "./manageholiday.js";
 import { loadPunchRecords, renderPunchRecords } from "./punchrecords.js";
+import {
+  reduceInventoryForOrder,
+  restoreInventoryByDocId,
+  getOrderProductLines,
+} from "./reduceInventoryForOrder.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
@@ -12,6 +17,7 @@ import {
   doc,
   deleteDoc,
   updateDoc,
+  deleteField,
   serverTimestamp,
   query,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -72,6 +78,9 @@ const managerDamageReportsListEl = document.getElementById('managerDamageReports
 const managerOrdersListEl = document.getElementById('managerOrdersList');
 const orderSearchQueryEl = document.getElementById('orderSearchQuery');
 const orderStatusFilterEl = document.getElementById('orderStatusFilter');
+const orderPaymentFilterEl = document.getElementById('orderPaymentFilter');
+const orderDetailModal = document.getElementById('order-detail-modal');
+const orderDetailBody = document.getElementById('order-detail-body');
 
 let deleteDamageId = null;
 let lastPayslipShareData = null; // { url, emp, month, year } for SMS/WhatsApp/Mail
@@ -980,7 +989,137 @@ function normalizeForMatch(s) {
   return (String(s || '')).trim().toLowerCase();
 }
 
-// Load manager orders with approve/reject
+function closeOrderDetailModal() {
+  if (orderDetailModal) {
+    orderDetailModal.style.display = 'none';
+    orderDetailModal.removeAttribute('data-current-order-id');
+  }
+}
+
+async function loadRatesMapForOrders() {
+  const ratesSnap = await getDocs(collection(db, 'rates_selling'));
+  const ratesMap = {};
+  ratesSnap.docs.forEach((d) => {
+    const r = d.data();
+    const name = r.productName || r.name || '';
+    const unit = r.unit || '';
+    if (name) {
+      const keyNameOnly = normalizeForMatch(name);
+      const keyFull = normalizeForMatch(name) + '||' + normalizeForMatch(unit);
+      ratesMap[keyFull] = Number(r.sellingPrice ?? r.rate ?? 0);
+      if (!ratesMap[keyNameOnly]) ratesMap[keyNameOnly] = Number(r.sellingPrice ?? r.rate ?? 0);
+    }
+  });
+  return ratesMap;
+}
+
+async function openOrderDetailModal(orderId) {
+  if (!orderDetailBody || !orderDetailModal) return;
+  orderDetailBody.innerHTML = '<p style="color:#94a3b8;">Loading…</p>';
+  orderDetailModal.style.display = 'flex';
+  orderDetailModal.setAttribute('data-current-order-id', orderId);
+  try {
+    const [snap, ratesMap] = await Promise.all([
+      getDoc(doc(db, 'orders', orderId)),
+      loadRatesMapForOrders(),
+    ]);
+    if (!snap.exists()) {
+      orderDetailBody.innerHTML = '<p class="error">Order not found.</p>';
+      return;
+    }
+    const o = { id: snap.id, ...snap.data() };
+    const status = (o.status || 'pending').toLowerCase();
+    const payRaw = String(o.paymentStatus || '').toLowerCase();
+    const isPaid = payRaw === 'paid';
+    const paymentBadge = isPaid
+      ? '<span class="status-badge status-payment-paid">Paid</span>'
+      : '<span class="status-badge status-payment-unpaid">Unpaid</span>';
+
+    let productsArray = [];
+    if (Array.isArray(o.products) && o.products.length > 0) {
+      productsArray = o.products;
+    } else if (o.productName) {
+      productsArray = [{
+        productName: o.productName,
+        productBarcode: o.productBarcode || '—',
+        quantity: o.quantity,
+        unit: o.unit,
+      }];
+    }
+
+    let orderTotal = 0;
+    let linesHtml = '';
+    for (const p of productsArray) {
+      const name = p.productName || p.name || '—';
+      const unit = p.unit || '—';
+      const qty = Number(p.quantity) || 0;
+      const barcode = p.productBarcode || p.barcode || '—';
+      const keyFull = normalizeForMatch(name) + '||' + normalizeForMatch(unit);
+      const keyName = normalizeForMatch(name);
+      const rate = ratesMap[keyFull] ?? ratesMap[keyName] ?? 0;
+      const lineTotal = qty * rate;
+      orderTotal += lineTotal;
+      linesHtml += `<tr>
+        <td style="padding:0.45rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.06);">${escapeHtml(name)}</td>
+        <td style="padding:0.45rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.06);">${escapeHtml(barcode)}</td>
+        <td style="padding:0.45rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.06);">${qty}</td>
+        <td style="padding:0.45rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.06);">${escapeHtml(unit)}</td>
+        <td style="padding:0.45rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.06);">Rs. ${rate.toLocaleString('en-IN')}</td>
+        <td style="padding:0.45rem 0.5rem;border-bottom:1px solid rgba(255,255,255,0.06);color:#f59e0b;font-weight:600;">Rs. ${lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+      </tr>`;
+    }
+
+    let createdStr = '—';
+    if (o.createdAt?.toDate) {
+      try { createdStr = o.createdAt.toDate().toLocaleString(); } catch (_) {}
+    }
+
+    const totalStr = orderTotal > 0
+      ? `Rs. ${orderTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+      : '<span style="color:#ef4444;">No selling rates for these products</span>';
+
+    orderDetailBody.innerHTML = `
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:0.88rem;margin-bottom:1rem;">
+        <span style="color:#94a3b8;">Order ID</span><span style="color:#f0f4ff;font-weight:600;">${escapeHtml(o.id)}</span>
+        <span style="color:#94a3b8;">Created</span><span>${escapeHtml(createdStr)}</span>
+        <span style="color:#94a3b8;">Employee</span><span>${escapeHtml(o.employeeName || o.employeeId || '—')}</span>
+        <span style="color:#94a3b8;">Order status</span><span><span class="status-badge status-${status}">${escapeHtml(status)}</span></span>
+        <span style="color:#94a3b8;">Payment</span><span>${paymentBadge}</span>
+        <span style="color:#94a3b8;">Supplier</span><span>${escapeHtml(o.supplierName || '—')}</span>
+        <span style="color:#94a3b8;">Contact</span><span>${escapeHtml(o.supplierContact || '—')}</span>
+        <span style="color:#94a3b8;">Address</span><span>${escapeHtml(o.supplierAddress || o.deliveryAddress || '—')}</span>
+        <span style="color:#94a3b8;">Delivery date</span><span>${escapeHtml(o.deliveryDate || '—')}</span>
+        <span style="color:#94a3b8;">Est. total</span><span style="font-weight:700;color:#f59e0b;">${totalStr}</span>
+        <span style="color:#94a3b8;">Notes</span><span style="color:#94a3b8;">${escapeHtml(o.notes || '—')}</span>
+      </div>
+      <h4 style="margin:0 0 0.5rem;color:#f0f4ff;font-size:0.9rem;">Products</h4>
+      <div style="overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+          <thead><tr style="text-align:left;color:#94a3b8;">
+            <th style="padding:0.5rem;">Name</th><th>Barcode</th><th>Qty</th><th>Unit</th><th>Rate</th><th>Line</th>
+          </tr></thead>
+          <tbody>${linesHtml || '<tr><td colspan="6" style="padding:0.75rem;color:#64748b;">No line items</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="order-detail-actions" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.08);display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <span style="color:#94a3b8;font-size:0.8rem;width:100%;margin-bottom:4px;">Actions</span>
+        <button type="button" class="btn btn-sm btn-primary" data-order-action="approved" style="width:auto;">Approved</button>
+        <button type="button" class="btn btn-sm btn-outline" data-order-action="pending" style="width:auto;">Pending</button>
+        <button type="button" class="btn btn-sm btn-outline" data-order-action="rejected" style="border-color:rgba(244,63,94,0.4);color:#fda4af;width:auto;">Rejected</button>
+        <button type="button" class="btn btn-sm btn-outline" data-order-action="payment-paid" style="width:auto;">Mark paid</button>
+        <button type="button" class="btn btn-sm btn-outline" data-order-action="payment-unpaid" style="width:auto;">Mark unpaid</button>
+        <button type="button" class="btn btn-sm btn-outline" data-order-action="preview-invoice" style="width:auto;">👁️ Preview invoice</button>
+        <button type="button" class="btn btn-sm btn-outline" data-order-action="print-invoice" style="width:auto;">🖨️ Print invoice</button>
+        <button type="button" class="btn btn-sm btn-danger" data-order-action="delete" style="width:auto;">🗑️ Delete order</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-order-action="close" style="margin-left:auto;width:auto;">Close</button>
+      </div>`;
+  } catch (err) {
+    console.error(err);
+    orderDetailBody.innerHTML = '<p class="error">Failed to load order.</p>';
+  }
+}
+
+// Load manager orders (table row opens detail modal)
 async function loadManagerOrders() {
   if (!managerOrdersListEl) return;
   managerOrdersListEl.innerHTML = '<p class="loading-msg">Loading orders…</p>';
@@ -1008,6 +1147,7 @@ async function loadManagerOrders() {
 
     const search = (orderSearchQueryEl?.value || '').toLowerCase().trim();
     const statusFilter = orderStatusFilterEl?.value || '';
+    const paymentFilter = orderPaymentFilterEl?.value || '';
     if (search) {
       items = items.filter(o =>
         (String(o.supplierContact || '')).toLowerCase().includes(search) ||
@@ -1018,6 +1158,11 @@ async function loadManagerOrders() {
     if (statusFilter) {
       items = items.filter(o => (String(o.status || '')).toLowerCase() === statusFilter.toLowerCase());
     }
+    if (paymentFilter === 'paid') {
+      items = items.filter(o => String(o.paymentStatus || '').toLowerCase() === 'paid');
+    } else if (paymentFilter === 'unpaid') {
+      items = items.filter(o => String(o.paymentStatus || '').toLowerCase() !== 'paid');
+    }
 
     if (items.length === 0) {
       managerOrdersListEl.innerHTML = '<p class="empty-msg">No orders found.</p>';
@@ -1026,7 +1171,7 @@ async function loadManagerOrders() {
 
     let html = `
       <table class="manager-table">
-        <thead><tr><th>Products</th><th>Supplier</th><th>Contact</th><th>Address</th><th>Delivery</th><th>Est. Total</th><th>Notes</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Products</th><th>Supplier</th><th>Contact</th><th>Address</th><th>Delivery</th><th>Est. Total</th><th>Notes</th><th>Status</th></tr></thead>
         <tbody>`;
     for (const o of items) {
       const deliveryDate = o.deliveryDate || '—';
@@ -1069,10 +1214,8 @@ async function loadManagerOrders() {
         ? `<span style="color:#f59e0b;font-weight:700;font-size:0.95rem;">Rs. ${orderTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>`
         : `<span style="color:#ef4444;font-size:0.8rem;" title="No selling rates found for these products">⚠️ No rates</span>`;
 
-      const productSummary = productsArray.map(p => `${p.productName || '—'} (×${p.quantity ?? '?'})`).join(', ');
-
       html += `
-        <tr>
+        <tr class="manager-order-row" data-order-id="${o.id}" style="cursor:pointer;" title="Click for details">
           <td>${productsCellHtml}</td>
           <td>${escapeHtml(o.supplierName || '—')}</td>
           <td>${escapeHtml(o.supplierContact || '—')}</td>
@@ -1081,72 +1224,107 @@ async function loadManagerOrders() {
           <td>${totalCellHtml}</td>
           <td style="max-width:180px;font-size:0.82rem;color:#94a3b8;">${escapeHtml(o.notes || '—')}</td>
           <td><span class="status-badge status-${status}">${escapeHtml(status)}</span></td>
-          <td style="white-space:nowrap;">
-            <div class="order-actions-dropdown" 
-                 data-id="${o.id}" 
-                 data-product="${escapeHtml(productSummary)}"
-                 data-supplier="${escapeHtml(o.supplierName || '—')}"
-                 data-qty="${productsArray.length} product(s)"
-                 data-status="${status}">
-              <button type="button" class="btn btn-sm btn-outline order-actions-trigger" title="Actions">Actions ▼</button>
-              <div class="order-actions-menu">
-                <button type="button" class="order-action-item" data-action="approved">Approved</button>
-                <button type="button" class="order-action-item" data-action="pending">Pending</button>
-                <button type="button" class="order-action-item" data-action="rejected">Rejected</button>
-                <hr class="order-action-divider">
-                <button type="button" class="order-action-item" data-action="preview-invoice">👁️ Preview Invoice</button>
-                <button type="button" class="order-action-item" data-action="print-invoice">🖨️ Print Invoice</button>
-                <hr class="order-action-divider">
-                <button type="button" class="order-action-item order-action-delete" data-action="delete">🗑️ Delete</button>
-              </div>
-            </div>
-          </td>
         </tr>`;
     }
     html += '</tbody></table>';
     managerOrdersListEl.innerHTML = html;
-
-    // Order actions dropdown: toggle + action handlers
-    managerOrdersListEl.querySelectorAll('.order-actions-trigger').forEach(trigger => {
-      trigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const dropdown = trigger.closest('.order-actions-dropdown');
-        const menu = dropdown?.querySelector('.order-actions-menu');
-        document.querySelectorAll('.order-actions-menu.show').forEach(m => m.classList.remove('show'));
-        if (menu) menu.classList.toggle('show');
-      });
-    });
-
-    managerOrdersListEl.querySelectorAll('.order-action-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const dropdown = item.closest('.order-actions-dropdown');
-        const menu = dropdown?.querySelector('.order-actions-menu');
-        if (menu) menu.classList.remove('show');
-        const action = item.dataset.action;
-        const orderId = dropdown?.dataset?.id;
-        if (!orderId) return;
-        if (action === 'delete') {
-          openOrderDeleteModal(dropdown);
-        } else if (action === 'print-invoice') {
-          openInvoiceSignatureModal(orderId, 'download');
-        } else if (action === 'preview-invoice') {
-          openInvoiceSignatureModal(orderId, 'preview');
-        } else {
-          updateOrderStatus(orderId, action);
-        }
-      });
-    });
   } catch (err) {
     console.error('Failed to load orders:', err);
     managerOrdersListEl.innerHTML = '<p class="error">Failed to load orders: ' + escapeHtml(err.message || err) + '</p>';
   }
 }
 
-async function updateOrderStatus(orderId, status) {
+async function updateOrderPaymentStatus(orderId, paymentStatus) {
+  const pay = String(paymentStatus || '').toLowerCase().trim();
+  if (pay !== 'paid' && pay !== 'unpaid') return;
   try {
-    await updateDoc(doc(db, 'orders', orderId), { status, updatedAt: serverTimestamp() });
-    showToast(`Order ${status}.`, 'success');
+    await updateDoc(doc(db, 'orders', orderId), {
+      paymentStatus: pay,
+      paymentUpdatedAt: serverTimestamp(),
+    });
+    showToast(`Payment marked ${pay}.`, 'success');
+    loadManagerOrders();
+  } catch (err) {
+    showToast('Failed to update payment: ' + (err.message || err), 'error');
+  }
+}
+
+async function updateOrderStatus(orderId, status) {
+  const newStatus = String(status || '').toLowerCase().trim();
+  try {
+    const orderSnap = await getDoc(doc(db, 'orders', orderId));
+    if (!orderSnap.exists()) {
+      showToast('Order not found.', 'error');
+      return;
+    }
+    const order = { id: orderSnap.id, ...orderSnap.data() };
+    const oldStatus = String(order.status || 'pending').toLowerCase().trim();
+
+    // ── Leaving approved: put stock back (only if we have deduction records) ──
+    if (oldStatus === 'approved' && newStatus !== 'approved') {
+      const deductions = order.inventoryDeductions;
+      if (Array.isArray(deductions) && deductions.length > 0) {
+        for (const d of deductions) {
+          const id = d.inventoryDocId || d.inventoryId;
+          const q = Number(d.qty ?? d.qtyReduced);
+          if (!id || !(q > 0)) continue;
+          const res = await restoreInventoryByDocId(db, id, q);
+          if (!res.success) {
+            showToast('Restoring inventory failed: ' + (res.message || 'unknown'), 'error');
+            return;
+          }
+        }
+      } else {
+        console.warn('Order had no inventoryDeductions; stock not auto-restored (legacy approve):', orderId);
+      }
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+        inventoryDeductions: deleteField(),
+      });
+      showToast(`Order ${newStatus}. Inventory restored.`, 'success');
+      loadManagerOrders();
+      if (managerInventoryListEl) loadManagerInventory();
+      return;
+    }
+
+    // ── Becoming approved: deduct finished-product inventory (pending does nothing) ──
+    if (newStatus === 'approved' && oldStatus !== 'approved') {
+      const lines = getOrderProductLines(order);
+      if (lines.length === 0) {
+        showToast('Order has no products to deduct from inventory.', 'error');
+        return;
+      }
+      const applied = [];
+      for (const line of lines) {
+        const res = await reduceInventoryForOrder(db, line);
+        if (!res.success) {
+          for (const prev of applied.reverse()) {
+            await restoreInventoryByDocId(db, prev.inventoryDocId, prev.qty);
+          }
+          showToast(res.message || 'Inventory deduction failed.', 'error');
+          return;
+        }
+        applied.push({
+          inventoryDocId: res.inventoryDocId,
+          qty: res.qtyReduced,
+          productName: line.productName,
+        });
+      }
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'approved',
+        updatedAt: serverTimestamp(),
+        inventoryDeductions: applied,
+      });
+      showToast('Order approved. Inventory updated.', 'success');
+      loadManagerOrders();
+      if (managerInventoryListEl) loadManagerInventory();
+      return;
+    }
+
+    // ── Other status changes (e.g. pending ↔ rejected): no inventory impact ──
+    await updateDoc(doc(db, 'orders', orderId), { status: newStatus, updatedAt: serverTimestamp() });
+    showToast(`Order ${newStatus}.`, 'success');
     loadManagerOrders();
   } catch (err) {
     showToast('Failed to update order: ' + (err.message || err), 'error');
@@ -1241,17 +1419,20 @@ function initInvoiceSignatureModal() {
   // Invoice (signature modal): SMS, WhatsApp, Mail
   document.getElementById('btn-invoice-sms')?.addEventListener('click', () => {
     const url = document.getElementById('invoice-download-url')?.value || lastInvoiceShareData?.url;
-    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    const o = lastInvoiceShareData?.order;
+    const { phone } = o ? parseSupplierContact(o.supplierContact ?? o.supplierPhone ?? o.customerPhone) : {};
     openSms(url, 'Your invoice: ', phone);
   });
   document.getElementById('btn-invoice-whatsapp')?.addEventListener('click', () => {
     const url = document.getElementById('invoice-download-url')?.value || lastInvoiceShareData?.url;
-    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    const o = lastInvoiceShareData?.order;
+    const { phone } = o ? parseSupplierContact(o.supplierContact ?? o.supplierPhone ?? o.customerPhone) : {};
     openWhatsApp(url, 'Your invoice: ', phone);
   });
   document.getElementById('btn-invoice-mail')?.addEventListener('click', () => {
     const url = document.getElementById('invoice-download-url')?.value || lastInvoiceShareData?.url;
-    const { email } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    const o = lastInvoiceShareData?.order;
+    const { email } = o ? parseSupplierContact(o.supplierContact ?? o.supplierPhone ?? o.customerPhone) : {};
     openMail(url, 'Your Invoice', 'Your invoice download link: ', email);
   });
 
@@ -1327,17 +1508,20 @@ function initInvoiceSignatureModal() {
   // Invoice (preview modal): SMS, WhatsApp, Mail
   document.getElementById('btn-invoice-preview-sms')?.addEventListener('click', () => {
     const url = document.getElementById('invoice-preview-download-url')?.value || lastInvoiceShareData?.url;
-    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    const o = lastInvoiceShareData?.order;
+    const { phone } = o ? parseSupplierContact(o.supplierContact ?? o.supplierPhone ?? o.customerPhone) : {};
     openSms(url, 'Your invoice: ', phone);
   });
   document.getElementById('btn-invoice-preview-whatsapp')?.addEventListener('click', () => {
     const url = document.getElementById('invoice-preview-download-url')?.value || lastInvoiceShareData?.url;
-    const { phone } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    const o = lastInvoiceShareData?.order;
+    const { phone } = o ? parseSupplierContact(o.supplierContact ?? o.supplierPhone ?? o.customerPhone) : {};
     openWhatsApp(url, 'Your invoice: ', phone);
   });
   document.getElementById('btn-invoice-preview-mail')?.addEventListener('click', () => {
     const url = document.getElementById('invoice-preview-download-url')?.value || lastInvoiceShareData?.url;
-    const { email } = lastInvoiceShareData?.order ? parseSupplierContact(lastInvoiceShareData.order.supplierContact) : {};
+    const o = lastInvoiceShareData?.order;
+    const { email } = o ? parseSupplierContact(o.supplierContact ?? o.supplierPhone ?? o.customerPhone) : {};
     openMail(url, 'Your Invoice', 'Your invoice download link: ', email);
   });
 }
@@ -1579,12 +1763,14 @@ const btnConfirmOrderDelete = document.getElementById('btn-confirm-delete');
 const btnCancelOrderDelete = document.getElementById('btn-cancel-delete');
 const modalCloseOrderDelete = document.getElementById('modal-close-delete');
 
-function openOrderDeleteModal(el) {
-  deleteOrderId = el.dataset.id;
-  const product = el.dataset.product;
-  const supplier = el.dataset.supplier || '—';
-  const qty = el.dataset.qty || '—';
-  const status = el.dataset.status || '—';
+function openOrderDeleteModal(source) {
+  const ds = source && (source.dataset || source);
+  if (!ds || !ds.id) return;
+  deleteOrderId = ds.id;
+  const product = escapeHtml(ds.product || '—');
+  const supplier = escapeHtml(ds.supplier || '—');
+  const qty = escapeHtml(ds.qty || '—');
+  const status = escapeHtml(ds.status || '—');
 
   if (deleteOrderDetails) {
     deleteOrderDetails.innerHTML = `
@@ -1598,6 +1784,38 @@ function openOrderDeleteModal(el) {
 
   document.querySelector('#delete-wage-modal h3').textContent = '🗑️ Delete Order';
   if (deleteOrderModal) deleteOrderModal.style.display = 'flex';
+}
+
+async function openOrderDeleteModalForOrderId(orderId) {
+  try {
+    const snap = await getDoc(doc(db, 'orders', orderId));
+    if (!snap.exists()) {
+      showToast('Order not found.', 'error');
+      return;
+    }
+    const o = { id: snap.id, ...snap.data() };
+    let productsArray = [];
+    if (Array.isArray(o.products) && o.products.length > 0) {
+      productsArray = o.products;
+    } else if (o.productName) {
+      productsArray = [{
+        productName: o.productName,
+        productBarcode: o.productBarcode || '—',
+        quantity: o.quantity,
+        unit: o.unit,
+      }];
+    }
+    const productSummary = productsArray.map((p) => `${p.productName || '—'} (×${p.quantity ?? '?'})`).join(', ');
+    openOrderDeleteModal({
+      id: orderId,
+      product: productSummary,
+      supplier: o.supplierName || '—',
+      qty: `${productsArray.length} product(s)`,
+      status: o.status || 'pending',
+    });
+  } catch (err) {
+    showToast('Failed to load order: ' + (err.message || err), 'error');
+  }
 }
 
 function closeOrderDeleteModal() {
@@ -1619,6 +1837,7 @@ async function confirmDeleteOrder() {
     await deleteDoc(doc(db, 'orders', deleteOrderId));
 
     showToast('Order deleted successfully', 'success');
+    closeOrderDetailModal();
     closeOrderDeleteModal();
     loadManagerOrders();
 
@@ -1652,11 +1871,67 @@ if (orderSearchQueryEl) {
 if (orderStatusFilterEl) {
   orderStatusFilterEl.addEventListener('change', () => loadManagerOrders());
 }
+if (orderPaymentFilterEl) {
+  orderPaymentFilterEl.addEventListener('change', () => loadManagerOrders());
+}
 
-// Close order action dropdowns when clicking outside
-document.addEventListener('click', () => {
-  managerOrdersListEl?.querySelectorAll('.order-actions-menu.show').forEach(m => m.classList.remove('show'));
-});
+// Orders table: click row → detail modal
+if (managerOrdersListEl && !managerOrdersListEl.dataset.orderDetailBound) {
+  managerOrdersListEl.dataset.orderDetailBound = '1';
+  managerOrdersListEl.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr.manager-order-row');
+    if (!tr) return;
+    const id = tr.dataset.orderId;
+    if (id) openOrderDetailModal(id);
+  });
+}
+
+// Order detail modal: overlay, close button, actions
+document.getElementById('order-detail-modal-close')?.addEventListener('click', () => closeOrderDetailModal());
+
+if (orderDetailModal && !orderDetailModal.dataset.detailActionsBound) {
+  orderDetailModal.dataset.detailActionsBound = '1';
+  orderDetailModal.addEventListener('click', (e) => {
+    if (e.target === orderDetailModal) {
+      closeOrderDetailModal();
+      return;
+    }
+    const btn = e.target.closest('[data-order-action]');
+    if (!btn) return;
+    e.stopPropagation();
+    const action = btn.dataset.orderAction;
+    const orderId = orderDetailModal.getAttribute('data-current-order-id');
+    if (!orderId) return;
+    if (action === 'close') {
+      closeOrderDetailModal();
+      return;
+    }
+    closeOrderDetailModal();
+    if (action === 'delete') {
+      openOrderDeleteModalForOrderId(orderId);
+      return;
+    }
+    if (action === 'print-invoice') {
+      openInvoiceSignatureModal(orderId, 'download');
+      return;
+    }
+    if (action === 'preview-invoice') {
+      openInvoiceSignatureModal(orderId, 'preview');
+      return;
+    }
+    if (action === 'payment-paid') {
+      updateOrderPaymentStatus(orderId, 'paid');
+      return;
+    }
+    if (action === 'payment-unpaid') {
+      updateOrderPaymentStatus(orderId, 'unpaid');
+      return;
+    }
+    if (action === 'approved' || action === 'pending' || action === 'rejected') {
+      updateOrderStatus(orderId, action);
+    }
+  });
+}
 
 // ── Open damage delete confirmation modal ──
 function openDamageDeleteModal(btn) {
@@ -2118,7 +2393,7 @@ if (deleteWageModal) {
     if (e.target === deleteWageModal) closeDeleteWageModal();
   });
 }
-
+// Calculate net wage based on inputs (used in edit modal preview and before saving edits)
 function calcNetWage({ qty, rate, ot, bonus, deduct, tax }) {
   const nQty = Number(qty) || 0;
   const nRate = Number(rate) || 0;
@@ -2128,7 +2403,7 @@ function calcNetWage({ qty, rate, ot, bonus, deduct, tax }) {
   const nTax = Number(tax) || 0;
   return (nQty * nRate) + (nOt * nRate) + nBonus - nDeduct - nTax;
 }
-
+// Update net wage preview in edit modal when relevant fields change
 function updateEditWageNetPreview() {
   if (!editWageNetPreview) return;
   const net = calcNetWage({
@@ -2141,7 +2416,7 @@ function updateEditWageNetPreview() {
   });
   editWageNetPreview.textContent = `Rs. ${Number(net || 0).toLocaleString()}`;
 }
-
+// Open edit wage modal and populate fields
 function openEditWageModalById(id) {
   if (!id || !editWageModal) return;
   const w = allWageEntries.find(x => x.id === id);
@@ -2167,13 +2442,13 @@ function openEditWageModalById(id) {
   updateEditWageNetPreview();
   editWageModal.style.display = 'flex';
 }
-
+// Open edit modal when clicking on a wage entry row
 function closeEditWageModal() {
   if (!editWageModal) return;
   editWageModal.style.display = 'none';
   if (editWageId) editWageId.value = '';
 }
-
+// Save edits made in the wage edit modal
 async function saveWageEdits() {
   const id = editWageId?.value?.trim();
   if (!id) return;
@@ -2489,8 +2764,9 @@ async function uploadPdfAndGetUrl(blob, storagePath) {
 
 // ─── Share via SMS, WhatsApp, Email (opens app with pre-filled message) ───
 function extractPhoneForWa(contact) {
-  if (!contact || typeof contact !== 'string') return null;
-  const digits = contact.replace(/\D/g, '');
+  if (contact == null || contact === '') return null;
+  const s = typeof contact === 'string' ? contact : String(contact);
+  const digits = s.replace(/\D/g, '');
   if (digits.length < 10) return null;
   let num = digits;
   if (!num.startsWith('977') && num.length === 10) num = '977' + num;
@@ -2525,12 +2801,33 @@ function openMail(url, subject, body, email) {
   window.location.href = href;
 }
 
-// Parse supplierContact: if contains @ treat as email, else as phone
+// Parse supplierContact for SMS / WhatsApp / mail: supports phone-only, email-only, or both (e.g. "name@x.com 9851234567")
 function parseSupplierContact(contact) {
-  if (!contact || typeof contact !== 'string') return { phone: null, email: null };
-  const c = contact.trim();
-  if (isEmailLike(c)) return { phone: null, email: c };
-  return { phone: c, email: null };
+  if (contact == null || contact === '') return { phone: null, email: null };
+  const c = String(contact).trim();
+
+  const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+  const emailMatches = c.match(EMAIL_RE);
+  const email = emailMatches && emailMatches.length ? emailMatches[0].trim() : (isEmailLike(c) ? c : null);
+
+  let withoutEmail = c;
+  if (emailMatches) {
+    for (const em of emailMatches) {
+      withoutEmail = withoutEmail.split(em).join(' ');
+    }
+    withoutEmail = withoutEmail.replace(/[,;|/]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  let digits = withoutEmail.replace(/\D/g, '');
+  let phone = null;
+  if (digits.length >= 10) {
+    phone = digits;
+  } else {
+    const run = c.match(/\d{10,}/);
+    if (run) phone = run[0];
+  }
+
+  return { phone, email };
 }
 
 // Share modal handlers

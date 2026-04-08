@@ -1697,7 +1697,6 @@ function init() {
 
   document.getElementById("fl-refresh")?.addEventListener("click", () => {
     loadProductionLogItems();
-    if (typeof initProductionLog === "function") initProductionLog();
   });
 
   document.getElementById("admin-holiday-refresh")?.addEventListener("click", loadAdminHolidays);

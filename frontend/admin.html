@@ -46,7 +46,6 @@
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="performance">📊 Performance</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="holidays">🏖️ Employees on Holiday</a></li>
           <li><a role="button" tabindex="0" class="admin-nav-link" data-section="punch-records">⏱️ Punch Records</a></li>
-          <li><a href="Manager.html#holiday" class="admin-nav-link" style="text-decoration:none;">Manage Holidays</a></li>
         </ul>
       </nav>
 
@@ -178,18 +177,18 @@
               <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.25rem;">
                 <input type="url" id="empIdPhotoUrl" placeholder="Or paste URL (https://...)">
                 <input type="file" id="empIdPhotoFile" accept="image/*" capture="environment" style="display:none">
-                <button type="button" id="empIdPhotoUpload" class="btn btn-outline btn-sm">📁 Upload</button>
-                <button type="button" id="empIdPhotoTake" class="btn btn-outline btn-sm">📷 Take Photo</button>
+                <button type="button" id="empIdPhotoUpload" class="btn btn-outline btn-sm" style="width: auto;">📁 Upload</button>
+                <button type="button" id="empIdPhotoTake" class="btn btn-outline btn-sm" style="width: auto;">📷 Take Photo</button>
               </div>
               <div id="empIdPhotoPreview" class="emp-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);overflow:hidden;background:rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;color:#64748b;font-size:0.8rem;">No image</div>
             </div>
             <div class="form-group">
               <label>Employee photo</label>
               <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.25rem;">
-                <input type="url" id="empPhotoUrl" placeholder="Or paste URL (https://...)">
+                <input type="url" id="empPhotoUrl" placeholder="Or paste URL (https://...)" >
                 <input type="file" id="empPhotoFile" accept="image/*" capture="environment" style="display:none">
-                <button type="button" id="empPhotoUpload" class="btn btn-outline btn-sm">📁 Upload</button>
-                <button type="button" id="empPhotoTake" class="btn btn-outline btn-sm">📷 Take Photo</button>
+                <button type="button" id="empPhotoUpload" class="btn btn-outline btn-sm" style="width: auto;">📁 Upload</button>
+                <button type="button" id="empPhotoTake" class="btn btn-outline btn-sm" style="width: auto;">📷 Take Photo</button>
               </div>
               <div id="empPhotoPreview" class="emp-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);overflow:hidden;background:rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;color:#64748b;font-size:0.8rem;">No image</div>
             </div>
@@ -197,8 +196,8 @@
             <div id="empPhotoCameraModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:1000;align-items:center;justify-content:center;flex-direction:column;">
               <video id="empPhotoCameraVideo" autoplay playsinline style="max-width:100%;max-height:70vh;border-radius:8px;"></video>
               <div style="display:flex;gap:0.75rem;margin-top:1rem;">
-                <button type="button" id="empPhotoCameraCapture" class="btn btn-primary">Capture</button>
-                <button type="button" id="empPhotoCameraCancel" class="btn btn-outline">Cancel</button>
+                <button type="button" id="empPhotoCameraCapture" class="btn btn-primary" style="width: auto;">Capture</button>
+                <button type="button" id="empPhotoCameraCancel" class="btn btn-outline" style="width: auto;">Cancel</button>
               </div>
             </div>
             <button type="submit" class="btn btn-primary">Add employee (info only)</button>
@@ -367,7 +366,7 @@
               <!-- Title -->
               <div class="pl-title-wrap">
                 <h2>Production Log</h2>
-                <p>Production from Finished Product inventory · Sales from manager-approved orders</p>
+                <p>Production from employee wage entries (Production dept) · Sales from manager-approved orders</p>
               </div>
 
               <!-- Filters -->
@@ -431,7 +430,7 @@
                 </div>
               </div>
 
-              <!-- Table -->
+              <!-- Table: Item summary -->
               <div class="pl-table-card">
                 <div class="pl-table-header">
                   <h3>Item-by-Item Summary</h3>
@@ -451,6 +450,29 @@
                     <tfoot>
                       <tr class="pl-tfoot-row" id="pl-tfoot"></tr>
                     </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Table: Employee production records -->
+              <div class="pl-table-card" style="margin-top:1.5rem;">
+                <div class="pl-table-header">
+                  <h3>Employee Production Records</h3>
+                </div>
+                <div class="pl-table-scroll">
+                  <table class="pl-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Employee</th>
+                        <th>Item</th>
+                        <th>Qty</th>
+                        <th>Unit</th>
+                        <th>Rate</th>
+                        <th>Net</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pl-emp-tbody"></tbody>
                   </table>
                 </div>
               </div>
@@ -547,13 +569,39 @@
         <section id="panel-punch-records" class="admin-panel">
           <div class="page-container">
             <h2>Punch Records</h2>
-            <p class="admin-desc">View employee In/Out punch records from the barcode kiosk. <span style="color:#10b981;font-weight:600;">Green</span> = In building · <span style="color:#eab308;font-weight:600;">Yellow</span> = Out of building.</p>
-<div id="punch-records-filter-row" class="punch-records-filters" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:1rem;">
+            <p class="admin-desc">View employee In/Out punch records from the barcode kiosk. <span style="color:#10b981;font-weight:600;">Green</span> = In building · <span style="color:#ea5708;font-weight:600;">Red</span> = Out of building.</p>
+            <div id="punch-records-filter-row" class="punch-records-filters" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:1rem;">
               <select id="punch-records-filter-employee"><option value="">All employees</option></select>
               <input type="date" id="punch-records-filter-date-from">
               <span style="color:#94a3b8;font-size:0.8rem;">to</span>
               <input type="date" id="punch-records-filter-date-to">
-              <button type="button" id="punch-records-refresh" class="btn btn-primary">Refresh</button>
+              <button type="button" id="punch-records-refresh" class="btn btn-primary" style="width: auto;">Refresh</button>
+            </div>
+            <div id="punch-admin-add-section" class="admin-section-card punch-records-filters" style="margin-bottom:1.5rem;background:rgba(26,34,54,0.85);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1.5rem;">
+              <h3 style="margin:0 0 0.75rem;font-size:0.95rem;color:#f0f4ff;">Add punch (Admin)</h3>
+          
+              <form id="punch-add-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+                <div class="form-group" style="margin:0;">
+                  <label for="punch-add-employee" style="display:block;margin-bottom:0.2rem;font-size:0.75rem;">Employee</label>
+                  <select id="punch-add-employee" required style="min-width:200px;"><option value="">Select…</option></select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="punch-add-date" style="display:block;margin-bottom:0.2rem;font-size:0.75rem;">Calendar date</label>
+                  <input type="date" id="punch-add-date" required title="Local calendar date of this punch" />
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="punch-add-time" style="display:block;margin-bottom:0.2rem;font-size:0.75rem;">Time</label>
+                  <input type="time" id="punch-add-time" required />
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="punch-add-type" style="display:block;margin-bottom:0.2rem;font-size:0.75rem;">Type</label>
+                  <select id="punch-add-type" style="min-width:90px;">
+                    <option value="in">In</option>
+                    <option value="out">Out</option>
+                  </select>
+                </div>
+                <button type="submit" id="punch-add-submit" class="btn btn-primary" style="width: auto;">Add punch</button>
+              </form>
             </div>
             <div id="punch-reset-section" class="admin-section-card punch-records-filters" style="margin-bottom:1.5rem;background:rgba(26,34,54,0.85);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1.5rem;">
               <h3 style="margin:0 0 0.75rem;font-size:0.95rem;color:#f0f4ff;">Reset Punches (before shift start)</h3>
@@ -567,11 +615,42 @@
                   <label for="punch-reset-employee" style="display:block;margin-bottom:0.2rem;font-size:0.75rem;">Employee (optional)</label>
                   <select id="punch-reset-employee"><option value="">All employees</option></select>
                 </div>
-                <button type="button" id="punch-reset-btn" class="btn btn-outline" style="border-color:rgba(239,68,68,0.5);color:#f87171;">Reset Punches</button>
+                <button type="button" id="punch-reset-btn" class="btn btn-outline" style="border-color:rgba(239,68,68,0.5);color:#f87171; width: auto;">Reset Punches</button>
               </div>
             </div>
             <div id="punch-records-list" style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.2);">
               <p style="padding:2rem;text-align:center;color:#64748b;">Loading punch records…</p>
+            </div>
+            <div id="punch-edit-modal" class="modal-overlay" style="display:none;z-index:1200;" aria-hidden="true">
+              <div class="modal-card" style="max-width:420px;">
+                <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;">
+                  <h3 style="margin:0;color:#f0f4ff;font-size:1rem;">Edit punch</h3>
+                  <button type="button" class="modal-close-btn" id="punch-edit-modal-close" aria-label="Close">&times;</button>
+                </div>
+                <div class="modal-body" style="padding:1rem 1.25rem;">
+                  <p id="punch-edit-hint" style="color:#94a3b8;font-size:0.85rem;margin:0 0 1rem;"></p>
+                  <input type="hidden" id="punch-edit-id" />
+                  <div class="form-group" style="margin-bottom:0.75rem;">
+                    <label for="punch-edit-date" style="font-size:0.8rem;">Calendar date</label>
+                    <input type="date" id="punch-edit-date" required style="width:100%;" />
+                  </div>
+                  <div class="form-group" style="margin-bottom:0.75rem;">
+                    <label for="punch-edit-time" style="font-size:0.8rem;">Time</label>
+                    <input type="time" id="punch-edit-time" required style="width:100%;" />
+                  </div>
+                  <div class="form-group" style="margin-bottom:1rem;">
+                    <label for="punch-edit-type" style="font-size:0.8rem;">Type</label>
+                    <select id="punch-edit-type" style="width:100%;">
+                      <option value="in">In</option>
+                      <option value="out">Out</option>
+                    </select>
+                  </div>
+                  <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button type="button" id="punch-edit-cancel" class="btn btn-outline">Cancel</button>
+                    <button type="button" id="punch-edit-save" class="btn btn-primary">Save</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>

@@ -147,3 +147,47 @@ if (googleBtn) {
     }
   });
 }
+
+// Add this function where manager confirms an order
+async function confirmOrder(orderId) {
+  const { doc, getDoc, updateDoc, increment } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+  
+  // 1. Get the order details
+  const orderRef = doc(db, "orders", orderId);
+  const orderSnap = await getDoc(orderRef);
+  
+  if (!orderSnap.exists()) {
+    alert("Order not found!");
+    return;
+  }
+
+  const orderData = orderSnap.data();
+
+  // 2. Update order status to confirmed
+  await updateDoc(orderRef, { status: "confirmed", confirmedAt: new Date() });
+
+  // 3. Reduce finished product inventory for each item in the order
+  for (const item of orderData.items) {
+    const productRef = doc(db, "finishedProducts", item.productId);
+    const productSnap = await getDoc(productRef);
+
+    if (productSnap.exists()) {
+      const currentQty = productSnap.data().quantity || 0;
+      const newQty = currentQty - item.quantity;
+
+      if (newQty < 0) {
+        alert(`Insufficient stock for ${item.productName}. Available: ${currentQty}, Requested: ${item.quantity}`);
+        // Optionally revert order status
+        await updateDoc(orderRef, { status: "pending" });
+        return;
+      }
+
+      await updateDoc(productRef, {
+        quantity: increment(-item.quantity),
+        lastUpdated: new Date()
+      });
+    }
+  }
+
+  alert("Order confirmed and inventory updated!");
+}

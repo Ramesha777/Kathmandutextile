@@ -17,6 +17,28 @@ const COOLDOWN_MINUTES = 5;
 const COLLECTION_EMPLOYEES = "employees";
 const COLLECTION_PUNCHES = "punchRecords";
 
+/** Must match punchrecords.js — attendance “day” label for night shifts (6 AM cutover). */
+const ATTENDANCE_CUTOVER_HOUR = 6;
+const ATTENDANCE_CUTOVER_MINUTE = 0;
+
+const MAX_SHIFT_HOURS = 12;
+const MAX_SHIFT_MS = MAX_SHIFT_HOURS * 60 * 60 * 1000;
+
+function ymdLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getAttendanceDateStrFromDate(d) {
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const day = d.getDate();
+  const mins = d.getHours() * 60 + d.getMinutes();
+  const cutM = ATTENDANCE_CUTOVER_HOUR * 60 + ATTENDANCE_CUTOVER_MINUTE;
+  let ref = new Date(y, m, day);
+  if (mins < cutM) ref.setDate(ref.getDate() - 1);
+  return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}-${String(ref.getDate()).padStart(2, "0")}`;
+}
+
 let employeesCache = [];
 let lastPunchTime = 0;
 let scannerResetTimer = null;
@@ -91,15 +113,29 @@ async function loadEmployees() {
 }
 
 async function getTodayPunchesForEmployee(employeeId) {
-  const today = getTodayStr();
+  const now = new Date();
+  const attendanceDay = getAttendanceDateStrFromDate(now);
+  const calDay = ymdLocal(now);
+  const dateKeys = attendanceDay === calDay ? [attendanceDay] : [attendanceDay, calDay];
   try {
-    const q = query(
-      collection(db, COLLECTION_PUNCHES),
-      where("employeeId", "==", employeeId),
-      where("date", "==", today)
-    );
-    const snap = await getDocs(q);
-    const punches = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const byId = new Map();
+    for (const dk of dateKeys) {
+      const q = query(
+        collection(db, COLLECTION_PUNCHES),
+        where("employeeId", "==", employeeId),
+        where("date", "==", dk)
+      );
+      const snap = await getDocs(q);
+      snap.docs.forEach((docSnap) => {
+        byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+      });
+    }
+    let punches = [...byId.values()];
+    punches = punches.filter((p) => {
+      const t = parsePunchTimestamp(p);
+      if (!t) return (p.date || "") === attendanceDay;
+      return getAttendanceDateStrFromDate(t) === attendanceDay;
+    });
     punches.sort((a, b) => {
       const ta = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp || 0).getTime();
       const tb = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp || 0).getTime();
@@ -128,6 +164,65 @@ function parsePunchTimestamp(punch) {
   return new Date(ts);
 }
 
+function getAttendanceWindowBounds(attendanceDateStr) {
+  const [y, mo, da] = attendanceDateStr.split("-").map(Number);
+  const start = new Date(y, mo - 1, da, ATTENDANCE_CUTOVER_HOUR, ATTENDANCE_CUTOVER_MINUTE, 0, 0);
+  const end = new Date(y, mo - 1, da + 1, ATTENDANCE_CUTOVER_HOUR, ATTENDANCE_CUTOVER_MINUTE, 0, 0);
+  return { startMs: start.getTime(), endMs: end.getTime() };
+}
+
+/** Same rules as punchrecords.js — sum In→Out segments + open In within the attendance window. */
+function computeTotalMsInsideKiosk(sortedAsc, attendanceDateStr) {
+  const { startMs, endMs } = getAttendanceWindowBounds(attendanceDateStr);
+  const now = Date.now();
+  const inCurrentWindow = now >= startMs && now < endMs;
+  let total = 0;
+  let i = 0;
+  const n = sortedAsc.length;
+  while (i < n) {
+    if (sortedAsc[i].type !== "in") {
+      i++;
+      continue;
+    }
+    const start = sortedAsc[i].timeMs;
+    if (i + 1 < n && sortedAsc[i + 1].type === "out") {
+      total += Math.max(0, sortedAsc[i + 1].timeMs - start);
+      i += 2;
+    } else {
+      let endCap = endMs;
+      if (inCurrentWindow) endCap = Math.min(now, endMs);
+      total += Math.max(0, endCap - start);
+      i++;
+    }
+  }
+  return total;
+}
+
+function buildMergedTimeline(punches, nextType, nowMs) {
+  const rows = punches.map((p) => {
+    const t = parsePunchTimestamp(p);
+    const timeMs = t ? t.getTime() : 0;
+    const typ = (p.type || "in").toLowerCase() === "out" ? "out" : "in";
+    return { id: p.id || "", type: typ, timeMs };
+  });
+  rows.push({ id: "_new", type: nextType, timeMs: nowMs });
+  rows.sort((a, b) => {
+    if (a.timeMs !== b.timeMs) return a.timeMs - b.timeMs;
+    if (a.type !== b.type) return a.type === "in" ? -1 : 1;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  return rows;
+}
+
+function validateAlternatingTimelineKiosk(sorted) {
+  if (sorted.length === 0) return true;
+  if (sorted[0].type !== "in") return false;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].type === sorted[i - 1].type) return false;
+  }
+  return true;
+}
+
 async function processPunch(barcode) {
   const emp = findEmployeeByBarcode(barcode);
   if (!emp) {
@@ -149,7 +244,7 @@ async function processPunch(barcode) {
   processingEmployeeId = employeeId;
   const employeeName = emp.fullName || emp.name || emp.email || emp.id;
   const now = new Date();
-  const today = getTodayStr();
+  const attendanceDay = getAttendanceDateStrFromDate(now);
 
   const todayPunches = await getTodayPunchesForEmployee(employeeId);
   const nextType = getNextPunchType(todayPunches);
@@ -176,12 +271,36 @@ async function processPunch(barcode) {
     }
   }
 
+  const mergedTimeline = buildMergedTimeline(todayPunches, nextType, now.getTime());
+  if (!validateAlternatingTimelineKiosk(mergedTimeline)) {
+    processingEmployeeId = null;
+    showTickMark(false);
+    showMessage("Punch sequence conflict. Please contact admin.", true);
+    scheduleScannerReset();
+    return { success: false, message: "Punch sequence conflict.", isError: true };
+  }
+  const totalAfter = computeTotalMsInsideKiosk(mergedTimeline, attendanceDay);
+  if (totalAfter > MAX_SHIFT_MS) {
+    processingEmployeeId = null;
+    showTickMark(false);
+    showMessage(
+      `Maximum shift is ${MAX_SHIFT_HOURS} hours in the building for this attendance day. Contact admin if you need changes.`,
+      true
+    );
+    scheduleScannerReset();
+    return {
+      success: false,
+      message: `Maximum ${MAX_SHIFT_HOURS}h shift`,
+      isError: true,
+    };
+  }
+
   try {
     await addDoc(collection(db, COLLECTION_PUNCHES), {
       employeeId,
       employeeName,
       type: nextType,
-      date: today,
+      date: attendanceDay,
       timestamp: now,
     });
 
