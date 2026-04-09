@@ -1,4 +1,4 @@
-// manageholiday.js — Grant holiday & view employee schedule
+// manageholiday.js — Manager holiday requests & holidays list
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
@@ -8,7 +8,9 @@ import {
   addDoc,
   doc,
   getDoc,
-  deleteDoc,
+  updateDoc,
+  serverTimestamp,
+  deleteField,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "../backend/firebaseconfig.js";
 
@@ -21,7 +23,8 @@ const COLLECTION_EMPLOYEES = "employees";
 
 let employees = [];
 let holidays = [];
-let currentUserCanDelete = false;
+/** Only admins may approve/reject holidays in the manager holidays table (UI + handleManagerHolidayAction). */
+let currentUserIsAdmin = false;
 
 const toastEl = document.getElementById("toast");
 
@@ -65,8 +68,7 @@ async function loadHolidays() {
 
 function populateEmployeeSelects() {
   const selGrant = document.getElementById("holiday-employee");
-  const selSchedule = document.getElementById("holiday-schedule-employee");
-  if (!selGrant || !selSchedule) return;
+  if (!selGrant) return;
 
   const opts =
     '<option value="">Select employee</option>' +
@@ -80,68 +82,105 @@ function populateEmployeeSelects() {
       .join("");
 
   selGrant.innerHTML = opts;
-  selSchedule.innerHTML = opts;
 }
 
-function renderScheduleForEmployee(empId, canDelete = false) {
-  const listEl = document.getElementById("holiday-schedule-list");
+function managerHolidayStatusBadge(s) {
+  const st = (s || "pending").toLowerCase();
+  const colors = { approved: "#10b981", rejected: "#ef4444", pending: "#f59e0b" };
+  const c = colors[st] || "#64748b";
+  return `<span style="padding:0.2rem 0.5rem;border-radius:6px;font-size:0.8rem;background:${c}33;color:${c};font-weight:600;">${escapeHtml(st)}</span>`;
+}
+
+function populateManagerHolidayFilter() {
+  const filterEl = document.getElementById("manager-holiday-filter-employee");
+  if (!filterEl) return;
+  const empIds = [...new Set(holidays.map((h) => h.employeeId).filter(Boolean))];
+  const currentVal = filterEl.value;
+  filterEl.innerHTML =
+    "<option value=''>All employees</option>" +
+    empIds
+      .map((eid) => {
+        const emp = employees.find((e) => e.id === eid);
+        const name = emp ? emp.fullName || emp.name || emp.id : eid;
+        return `<option value="${escapeHtml(eid)}">${escapeHtml(name)}</option>`;
+      })
+      .join("");
+  if (currentVal && empIds.includes(currentVal)) filterEl.value = currentVal;
+}
+
+function renderManagerHolidays() {
+  const listEl = document.getElementById("manager-holidays-list");
+  const filterEl = document.getElementById("manager-holiday-filter-employee");
+  const statusFilterEl = document.getElementById("manager-holiday-filter-status");
   if (!listEl) return;
+  const empFilter = filterEl?.value?.trim() || "";
+  const statusFilter = statusFilterEl?.value?.trim() || "";
+  let items = holidays;
+  if (empFilter) items = items.filter((h) => h.employeeId === empFilter);
+  if (statusFilter)
+    items = items.filter((h) => (h.status || "pending").toLowerCase() === statusFilter.toLowerCase());
 
-  if (!empId) {
+  if (items.length === 0) {
     listEl.innerHTML =
-      '<p style="padding:1.5rem;text-align:center;color:#64748b;">Select an employee to view their holiday schedule.</p>';
+      "<p style='padding:2rem;text-align:center;color:#64748b;'>No holiday records found.</p>";
     return;
-  }
-
-  const empHolidays = holidays
-    .filter((h) => h.employeeId === empId)
-    .sort((a, b) => (b.dateFrom || "").localeCompare(a.dateFrom || ""));
-
-  if (empHolidays.length === 0) {
-    listEl.innerHTML =
-      '<p style="padding:1.5rem;text-align:center;color:#64748b;">No holidays scheduled.</p>';
-    return;
-  }
-
-  function statusBadge(s) {
-    const st = (s || "pending").toLowerCase();
-    const colors = { approved: "#10b981", rejected: "#ef4444", pending: "#f59e0b" };
-    const c = colors[st] || "#64748b";
-    return `<span style="padding:0.2rem 0.5rem;border-radius:6px;font-size:0.8rem;background:${c}33;color:${c};font-weight:600;">${escapeHtml(st)}</span>`;
   }
 
   listEl.innerHTML = `
     <table class="manager-table" style="width:100%;border-collapse:collapse;">
       <thead>
-        <tr style="background:rgba(0,0,0,0.2);">
-          <th style="padding:0.6rem 0.8rem;text-align:left;font-size:0.85rem;">From</th>
-          <th style="padding:0.6rem 0.8rem;text-align:left;font-size:0.85rem;">To</th>
-          <th style="padding:0.6rem 0.8rem;text-align:left;font-size:0.85rem;">Type</th>
-          <th style="padding:0.6rem 0.8rem;text-align:left;font-size:0.85rem;">Status</th>
-          <th style="padding:0.6rem 0.8rem;text-align:left;font-size:0.85rem;">Notes</th>
-          <th style="padding:0.6rem 0.8rem;font-size:0.85rem;"></th>
+        <tr>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Employee</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">From</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">To</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Type</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Status</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Notes</th>
+          <th style="padding:0.6rem 0.8rem;text-align:left;">Actions</th>
         </tr>
       </thead>
       <tbody>
-        ${empHolidays
+        ${items
           .map(
             (h) => `
-          <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
-            <td style="padding:0.6rem 0.8rem;font-size:0.9rem;">${escapeHtml(
-              h.dateFrom || "—"
-            )}</td>
-            <td style="padding:0.6rem 0.8rem;font-size:0.9rem;">${escapeHtml(
-              h.dateTo || "—"
-            )}</td>
-            <td style="padding:0.6rem 0.8rem;font-size:0.9rem;">${escapeHtml(
-              h.type || "—"
-            )}</td>
-            <td style="padding:0.6rem 0.8rem;font-size:0.9rem;">${statusBadge(h.status)}</td>
-            <td style="padding:0.6rem 0.8rem;font-size:0.9rem;color:#94a3b8;">${escapeHtml(
-              h.notes || "—"
-            )}</td>
-            <td style="padding:0.6rem 0.8rem;">
-              ${canDelete ? `<button type="button" class="btn-holiday-delete btn btn-outline" data-id="${h.id}" style="padding:0.3rem 0.6rem;font-size:0.8rem;">Delete</button>` : "—"}
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.06);" data-id="${escapeHtml(h.id)}">
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.employeeName || h.employeeId || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.dateFrom || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.dateTo || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.type || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;">${managerHolidayStatusBadge(h.status)}</td>
+            <td style="padding:0.6rem 0.8rem;color:#94a3b8;">
+              ${escapeHtml(h.notes || "—")}
+              ${
+                (h.extendRequestStatus || "").toLowerCase() === "pending" && h.extendRequestNewDate
+                  ? `<div style="margin-top:6px;font-size:0.78rem;color:#f59e0b;font-weight:600;">Extend requested → ${escapeHtml(h.extendRequestNewDate)}</div>`
+                  : ""
+              }
+            </td>
+            <td style="padding:0.6rem 0.8rem;white-space:nowrap;">
+              ${
+                currentUserIsAdmin
+                  ? `<button type="button" class="btn-mgr-holiday-approve btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Approve</button>
+              <button type="button" class="btn-mgr-holiday-reject btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Reject</button>
+              `
+                  : ""
+              }
+              ${
+                currentUserIsAdmin &&
+                (h.extendRequestStatus || "").toLowerCase() === "pending" &&
+                h.extendRequestNewDate
+                  ? `<button type="button" class="btn-mgr-holiday-apply-extend btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Apply extend</button>
+              <button type="button" class="btn-mgr-holiday-reject-extend btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#64748b;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Dismiss extend</button>
+              `
+                  : ""
+              }
+              ${
+                currentUserIsAdmin
+                  ? `<button type="button" class="btn-mgr-holiday-extend btn btn-sm btn-outline" data-id="${h.id}" data-from="${escapeHtml(h.dateFrom || "")}" data-to="${escapeHtml(h.dateTo || "")}" data-name="${escapeHtml(h.employeeName || "—")}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;margin-right:4px;">Extend</button>`
+                  : (h.extendRequestStatus || "").toLowerCase() === "pending"
+                    ? `<span style="font-size:0.75rem;color:#94a3b8;">Extend request pending</span>`
+                    : `<button type="button" class="btn-mgr-holiday-request-extend btn btn-sm btn-outline" data-id="${h.id}" data-from="${escapeHtml(h.dateFrom || "")}" data-to="${escapeHtml(h.dateTo || "")}" data-name="${escapeHtml(h.employeeName || "—")}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;margin-right:4px;">Request extend</button>`
+              }
             </td>
           </tr>
         `
@@ -151,20 +190,219 @@ function renderScheduleForEmployee(empId, canDelete = false) {
     </table>
   `;
 
-  listEl.querySelectorAll(".btn-holiday-delete").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.dataset.id;
-      if (!id || !confirm("Remove this holiday?")) return;
-      try {
-        await deleteDoc(doc(db, COLLECTION_HOLIDAYS, id));
-        showToast("Holiday removed", "success");
-        await loadHolidays();
-        renderScheduleForEmployee(empId, canDelete);
-      } catch (err) {
-        showToast("Failed to remove: " + (err.message || err), "error");
-      }
-    });
+  listEl.querySelectorAll(".btn-mgr-holiday-approve").forEach((btn) => {
+    btn.addEventListener("click", () => handleManagerHolidayAction(btn.dataset.id, "approved"));
   });
+  listEl.querySelectorAll(".btn-mgr-holiday-reject").forEach((btn) => {
+    btn.addEventListener("click", () => handleManagerHolidayAction(btn.dataset.id, "rejected"));
+  });
+  listEl.querySelectorAll(".btn-mgr-holiday-extend").forEach((btn) => {
+    btn.addEventListener("click", () => openManagerExtendHolidayModal(btn.dataset, "admin-direct"));
+  });
+  listEl.querySelectorAll(".btn-mgr-holiday-request-extend").forEach((btn) => {
+    btn.addEventListener("click", () => openManagerExtendHolidayModal(btn.dataset, "manager-request"));
+  });
+  listEl.querySelectorAll(".btn-mgr-holiday-apply-extend").forEach((btn) => {
+    btn.addEventListener("click", () => handleApplyExtendRequest(btn.dataset.id));
+  });
+  listEl.querySelectorAll(".btn-mgr-holiday-reject-extend").forEach((btn) => {
+    btn.addEventListener("click", () => handleRejectExtendRequest(btn.dataset.id));
+  });
+}
+
+async function handleManagerHolidayAction(holidayId, status) {
+  if (!holidayId) return;
+  if ((await getCurrentUserRole()) !== "admin") {
+    showToast("Only an admin can approve or reject holidays.", "error");
+    return;
+  }
+  try {
+    await updateDoc(doc(db, COLLECTION_HOLIDAYS, holidayId), {
+      status,
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null,
+    });
+    showToast(`Holiday ${status}.`, "success");
+    await loadHolidays();
+    refreshManagerHolidayUI();
+  } catch (err) {
+    console.error("Holiday action failed:", err);
+    showToast("Failed: " + (err.message || err), "error");
+  }
+}
+
+let managerExtendHolidayId = null;
+/** "admin-direct" = set end date immediately (admin). "manager-request" = submit pending extend for admin. */
+let managerExtendMode = "admin-direct";
+
+function openManagerExtendHolidayModal(dataset, mode) {
+  managerExtendHolidayId = dataset.id;
+  managerExtendMode = mode === "manager-request" ? "manager-request" : "admin-direct";
+  const modal = document.getElementById("manager-holiday-extend-modal");
+  const title = document.getElementById("manager-extend-modal-title");
+  const desc = document.getElementById("manager-extend-holiday-desc");
+  const label = document.getElementById("manager-extend-date-label");
+  const inp = document.getElementById("manager-extend-new-date");
+  const confirmBtn = document.getElementById("manager-extend-confirm");
+  const isRequest = managerExtendMode === "manager-request";
+  if (title) title.textContent = isRequest ? "Request extend leave" : "Extend holiday";
+  if (label) label.textContent = isRequest ? "Requested new end date" : "New end date";
+  if (desc) {
+    desc.textContent = isRequest
+      ? `Submit a request to extend leave for ${dataset.name || "employee"}. Current approved end: ${dataset.to || "—"}. An admin will approve or dismiss the request.`
+      : `Extend holiday for ${dataset.name || "employee"} (current end: ${dataset.to || "—"})`;
+  }
+  if (inp) inp.value = dataset.to || "";
+  if (confirmBtn) confirmBtn.textContent = isRequest ? "Submit request" : "Extend";
+  if (modal) modal.style.display = "flex";
+}
+
+function closeManagerExtendHolidayModal() {
+  managerExtendHolidayId = null;
+  const modal = document.getElementById("manager-holiday-extend-modal");
+  if (modal) modal.style.display = "none";
+}
+
+async function confirmManagerExtendHoliday() {
+  if (!managerExtendHolidayId) return;
+  const inp = document.getElementById("manager-extend-new-date");
+  const newDate = inp?.value?.trim();
+  if (!newDate) {
+    showToast("Please enter a new end date.", "error");
+    return;
+  }
+
+  if (managerExtendMode === "manager-request") {
+    if ((await getCurrentUserRole()) !== "manager") {
+      showToast("Only managers submit extend requests from this action.", "error");
+      return;
+    }
+    const h = holidays.find((x) => x.id === managerExtendHolidayId);
+    const currentEnd = h?.dateTo || "";
+    if (currentEnd && newDate <= currentEnd) {
+      showToast("Choose a new end date after the current end date.", "error");
+      return;
+    }
+    if (h?.dateFrom && newDate < h.dateFrom) {
+      showToast("Requested end date must be on or after the leave start date.", "error");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, COLLECTION_HOLIDAYS, managerExtendHolidayId), {
+        extendRequestNewDate: newDate,
+        extendRequestStatus: "pending",
+        extendRequestedAt: serverTimestamp(),
+        extendRequestedBy: auth.currentUser?.uid || null,
+      });
+      showToast("Extend request submitted for admin approval.", "success");
+      closeManagerExtendHolidayModal();
+      await loadHolidays();
+      refreshManagerHolidayUI();
+    } catch (err) {
+      console.error("Extend request failed:", err);
+      showToast("Failed: " + (err.message || err), "error");
+    }
+    return;
+  }
+
+  if ((await getCurrentUserRole()) !== "admin") {
+    showToast("Only an admin can apply a direct extension.", "error");
+    return;
+  }
+  try {
+    await updateDoc(doc(db, COLLECTION_HOLIDAYS, managerExtendHolidayId), {
+      dateTo: newDate,
+      extendRequestNewDate: deleteField(),
+      extendRequestStatus: deleteField(),
+      extendRequestedAt: deleteField(),
+      extendRequestedBy: deleteField(),
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null,
+    });
+    showToast("Holiday extended.", "success");
+    closeManagerExtendHolidayModal();
+    await loadHolidays();
+    refreshManagerHolidayUI();
+  } catch (err) {
+    console.error("Extend failed:", err);
+    showToast("Failed: " + (err.message || err), "error");
+  }
+}
+
+async function handleApplyExtendRequest(holidayId) {
+  if (!holidayId) return;
+  if ((await getCurrentUserRole()) !== "admin") {
+    showToast("Only an admin can approve an extend request.", "error");
+    return;
+  }
+  const h = holidays.find((x) => x.id === holidayId);
+  if (!h || (h.extendRequestStatus || "").toLowerCase() !== "pending" || !h.extendRequestNewDate) return;
+  try {
+    await updateDoc(doc(db, COLLECTION_HOLIDAYS, holidayId), {
+      dateTo: h.extendRequestNewDate,
+      extendRequestNewDate: deleteField(),
+      extendRequestStatus: deleteField(),
+      extendRequestedAt: deleteField(),
+      extendRequestedBy: deleteField(),
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null,
+    });
+    showToast("Extend request applied.", "success");
+    await loadHolidays();
+    refreshManagerHolidayUI();
+  } catch (err) {
+    console.error("Apply extend failed:", err);
+    showToast("Failed: " + (err.message || err), "error");
+  }
+}
+
+async function handleRejectExtendRequest(holidayId) {
+  if (!holidayId) return;
+  if ((await getCurrentUserRole()) !== "admin") {
+    showToast("Only an admin can dismiss an extend request.", "error");
+    return;
+  }
+  if (!confirm("Dismiss this extend request? The end date will stay unchanged.")) return;
+  try {
+    await updateDoc(doc(db, COLLECTION_HOLIDAYS, holidayId), {
+      extendRequestNewDate: deleteField(),
+      extendRequestStatus: deleteField(),
+      extendRequestedAt: deleteField(),
+      extendRequestedBy: deleteField(),
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.uid || null,
+    });
+    showToast("Extend request dismissed.", "success");
+    await loadHolidays();
+    refreshManagerHolidayUI();
+  } catch (err) {
+    console.error("Dismiss extend failed:", err);
+    showToast("Failed: " + (err.message || err), "error");
+  }
+}
+
+function refreshManagerHolidayUI() {
+  populateManagerHolidayFilter();
+  renderManagerHolidays();
+}
+
+let managerHolidayListWired = false;
+
+function wireManagerHolidayListEvents() {
+  if (managerHolidayListWired) return;
+  managerHolidayListWired = true;
+  document.getElementById("manager-holiday-refresh")?.addEventListener("click", async () => {
+    const listEl = document.getElementById("manager-holidays-list");
+    if (listEl)
+      listEl.innerHTML =
+        "<p style='padding:2rem;text-align:center;color:#64748b;'>Loading holiday data…</p>";
+    await loadHolidays();
+    refreshManagerHolidayUI();
+  });
+  document.getElementById("manager-holiday-filter-employee")?.addEventListener("change", renderManagerHolidays);
+  document.getElementById("manager-holiday-filter-status")?.addEventListener("change", renderManagerHolidays);
+  document.getElementById("manager-extend-cancel")?.addEventListener("click", closeManagerExtendHolidayModal);
+  document.getElementById("manager-extend-confirm")?.addEventListener("click", confirmManagerExtendHoliday);
 }
 
 async function handleGrantHoliday(e) {
@@ -216,10 +454,7 @@ async function handleGrantHoliday(e) {
     if (inpTo) inpTo.value = "";
     if (inpNotes) inpNotes.value = "";
     await loadHolidays();
-    const selSchedule = document.getElementById("holiday-schedule-employee");
-    if (selSchedule?.value === empId) {
-      renderScheduleForEmployee(empId, currentUserCanDelete);
-    }
+    refreshManagerHolidayUI();
   } catch (err) {
     console.error("Grant holiday failed:", err);
     showToast("Failed to grant holiday: " + (err.message || err), "error");
@@ -243,24 +478,21 @@ export async function loadHolidayPanel() {
   await loadEmployees();
   await loadHolidays();
   populateEmployeeSelects();
-  currentUserCanDelete = (await getCurrentUserRole()) === "admin";
+  currentUserIsAdmin = (await getCurrentUserRole()) === "admin";
+
+  const listEl = document.getElementById("manager-holidays-list");
+  if (listEl)
+    listEl.innerHTML =
+      "<p style='padding:2rem;text-align:center;color:#64748b;'>Loading holiday data…</p>";
+  refreshManagerHolidayUI();
+  wireManagerHolidayListEvents();
 
   const form = document.getElementById("holiday-grant-form");
-  const selSchedule = document.getElementById("holiday-schedule-employee");
 
   if (form) {
     form.removeEventListener("submit", handleGrantHoliday);
     form.addEventListener("submit", handleGrantHoliday);
   }
-
-  if (selSchedule && !selSchedule.dataset.holidayInitialized) {
-    selSchedule.dataset.holidayInitialized = "true";
-    selSchedule.addEventListener("change", () =>
-      renderScheduleForEmployee(selSchedule.value, currentUserCanDelete)
-    );
-  }
-
-  renderScheduleForEmployee(selSchedule?.value || "", currentUserCanDelete);
 }
 
 // ─── Admin: Book Holiday (admin can directly book holiday for employees, auto-approved) ───

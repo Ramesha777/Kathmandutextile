@@ -15,7 +15,8 @@ import {
   deleteDoc,
   getDoc,
   updateDoc,
-  serverTimestamp
+  serverTimestamp,
+  deleteField
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   getStorage,
@@ -1070,7 +1071,11 @@ function renderAdminHolidays() {
             <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.dateTo || "—")}</td>
             <td style="padding:0.6rem 0.8rem;">${escapeHtml(h.type || "—")}</td>
             <td style="padding:0.6rem 0.8rem;">${adminHolidayStatusBadge(h.status)}</td>
-            <td style="padding:0.6rem 0.8rem;color:#94a3b8;">${escapeHtml(h.notes || "—")}</td>
+            <td style="padding:0.6rem 0.8rem;color:#94a3b8;">${escapeHtml(h.notes || "—")}${
+              (h.extendRequestStatus || "").toLowerCase() === "pending" && h.extendRequestNewDate
+                ? `<div style="margin-top:6px;font-size:0.78rem;color:#f59e0b;font-weight:600;">Extend requested → ${escapeHtml(h.extendRequestNewDate)}</div>`
+                : ""
+            }</td>
             <td style="padding:0.6rem 0.8rem;white-space:nowrap;">
               <button type="button" class="btn-holiday-approve btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Approve</button>
               <button type="button" class="btn-holiday-reject btn btn-sm" data-id="${h.id}" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px;">Reject</button>
@@ -1138,6 +1143,10 @@ async function confirmExtendHoliday() {
   try {
     await updateDoc(doc(db, "holidays", extendHolidayId), {
       dateTo: newDate,
+      extendRequestNewDate: deleteField(),
+      extendRequestStatus: deleteField(),
+      extendRequestedAt: deleteField(),
+      extendRequestedBy: deleteField(),
       updatedAt: serverTimestamp(),
       updatedBy: auth.currentUser?.uid || null
     });

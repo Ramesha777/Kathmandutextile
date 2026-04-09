@@ -73,9 +73,16 @@ service cloud.firestore {
     }
 
     // ─── holidays ───
-    // Manager + Admin: read, create, update. Admin only: delete.
+    // Read: manager + admin. Create: admin (any status); manager only pending leave requests. Updates: admin any; manager cannot change dateFrom/dateTo/status (extend via extendRequest* fields only). Delete: admin only.
     match /holidays/{holidayId} {
-      allow read, create, update: if isManagerOrAdmin();
+      allow read: if isManagerOrAdmin();
+      allow create: if isAdmin()
+        || (isManager() && request.resource.data.status == 'pending');
+      allow update: if isAdmin()
+        || (isManager()
+            && request.resource.data.status == resource.data.status
+            && request.resource.data.dateFrom == resource.data.dateFrom
+            && request.resource.data.dateTo == resource.data.dateTo);
       allow delete: if isAdmin();
     }
 

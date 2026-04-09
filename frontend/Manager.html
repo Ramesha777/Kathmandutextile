@@ -17,6 +17,7 @@
     .manager-sidebar { flex: 0 0 250px; flex-shrink: 0; }
     .manager-content { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 1.5rem; display: flex; flex-direction: column; width: 100%; scrollbar-gutter: stable; }
     .manager-content-inner { flex: 1; min-height: calc(100vh - 120px); min-width: 0; position: relative; overflow: hidden; }
+    #panel-holiday .page-container { max-width: 1000px; margin: 0 auto; }
   </style>
 </head>
 <body class="manager-page" data-required-role="Manager">
@@ -39,6 +40,7 @@
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="damage-reports">⚠️ Damage Reports</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="orders">📋 Manage Orders</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="punch-records">⏱️ Punch Records</a></li>
+          <li><a role="button" tabindex="0" class="manager-nav-link" data-section="holiday">🏖️ Holidays</a></li>
           <li><a role="button" tabindex="0" class="manager-nav-link" data-section="performance">📊 Performance</a></li>
           <li><a href="performance.html" style="display: none;">📊 Full Performance Page</a></li>
         </ul>
@@ -323,10 +325,81 @@
             <input type="date" id="punch-records-filter-date-from">
             <span style="color:#94a3b8;font-size:0.8rem;">to</span>
             <input type="date" id="punch-records-filter-date-to">
-            <button type="button" id="punch-records-refresh" class="btn btn-primary">Refresh</button>
+            <button type="button" id="punch-records-refresh" class="btn btn-primary" style="width: auto;">Refresh</button>
           </div>
           <div id="punch-records-list" style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.2);">
             <p style="padding:2rem;text-align:center;color:#64748b;">Loading punch records…</p>
+          </div>
+        </section>
+
+        <section id="panel-holiday" class="manager-panel">
+          <div class="page-container">
+            <h2>Employees on Holiday</h2>
+            <p class="manager-desc">View all employees on or scheduled for holiday. Submit a pending request for admin approval, or review the list below.</p>
+
+            <div class="admin-section-card" style="margin-bottom:1.5rem;background:rgba(26,34,54,0.85);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1.5rem;">
+              <h3 style="margin:0 0 1rem;font-size:1rem;color:#f0f4ff;">Request Holiday (pending)</h3>
+              <p style="margin:0 0 1rem;color:#94a3b8;font-size:0.85rem;">Submits a request with status <strong>pending</strong> for admin approval.</p>
+              <form id="holiday-grant-form" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;align-items:end;">
+                <div class="form-group" style="margin:0;">
+                  <label for="holiday-employee">Employee</label>
+                  <select id="holiday-employee" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;"><option value="">Select employee</option></select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="holiday-date-from">From</label>
+                  <input type="date" id="holiday-date-from" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="holiday-date-to">To</label>
+                  <input type="date" id="holiday-date-to" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label for="holiday-type">Type</label>
+                  <select id="holiday-type" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                    <option value="Annual">Annual</option>
+                    <option value="Sick">Sick</option>
+                    <option value="Emergency">Emergency</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                  <label for="holiday-notes">Notes</label>
+                  <input type="text" id="holiday-notes" placeholder="Optional" style="width:40%;max-width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                  <button type="submit" id="btn-grant-holiday" class="btn btn-primary" style="padding:0.5rem 1rem; width: auto;">Submit request</button>
+                </div>
+              </form>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:1rem;">
+              <select id="manager-holiday-filter-employee" style="min-width:200px;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                <option value="">All employees</option>
+              </select>
+              <select id="manager-holiday-filter-status" style="min-width:140px;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <button type="button" id="manager-holiday-refresh" class="btn btn-primary" style="padding:0.5rem 1rem;">Refresh</button>
+            </div>
+            <div id="manager-holidays-list" style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.2);">
+              <p style="padding:2rem;text-align:center;color:#64748b;">Loading holiday data…</p>
+            </div>
+
+            <div id="manager-holiday-extend-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center;">
+              <div style="background:var(--navy-800, #111827);border-radius:12px;padding:1.5rem;min-width:320px;border:1px solid rgba(255,255,255,0.1);">
+                <h4 id="manager-extend-modal-title" style="margin:0 0 1rem;color:#f0f4ff;">Extend Holiday</h4>
+                <p id="manager-extend-holiday-desc" style="color:#94a3b8;font-size:0.9rem;margin-bottom:1rem;"></p>
+                <div class="form-group" style="margin-bottom:1rem;">
+                  <label for="manager-extend-new-date" id="manager-extend-date-label">New end date</label>
+                  <input type="date" id="manager-extend-new-date" style="width:100%;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.6);color:#f0f4ff;">
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                  <button type="button" id="manager-extend-cancel" class="btn btn-outline">Cancel</button>
+                  <button type="button" id="manager-extend-confirm" class="btn btn-primary">Confirm</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

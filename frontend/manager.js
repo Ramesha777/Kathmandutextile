@@ -2516,50 +2516,105 @@ if (editWageModal) {
   if (el) el.addEventListener('input', updateEditWageNetPreview);
 });
 
-async function loadWageEntries() {
+function getFilteredWageEntries() {
+  let list = [...allWageEntries];
+  list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const searchEl = document.getElementById('wage-search');
+  const fromEl = document.getElementById('wage-date-from');
+  const toEl = document.getElementById('wage-date-to');
+  const q = (searchEl?.value || '').toLowerCase().trim();
+  const from = (fromEl?.value || '').trim();
+  const to = (toEl?.value || '').trim();
+  if (from) list = list.filter((w) => (w.date || '') >= from);
+  if (to) list = list.filter((w) => (w.date || '') <= to);
+  if (q) {
+    list = list.filter((w) => {
+      const empName = (employees.find((e) => e.id === w.employeeId)?.fullName || w.employeeName || '').toLowerCase();
+      const empId = String(w.employeeId || '').toLowerCase();
+      const dept = String(w.department || '').toLowerCase();
+      const item = String(w.item || '').toLowerCase();
+      return empName.includes(q) || empId.includes(q) || dept.includes(q) || item.includes(q);
+    });
+  }
+  return list;
+}
+
+function renderWageEntriesTable() {
   if (!tblWageEntriesBody) return;
-  try {
-    const snap = await getDocs(collection(db, 'wageEntries'));
-    const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    allWageEntries = [...entries];
-    entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    tblWageEntriesBody.innerHTML = '';
-    if (!entries.length) {
-      tblWageEntriesBody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#94a3b8;padding:1.5rem;">No wage entries found.</td></tr>';
-      return;
-    }
-    entries.forEach(w => {
-      const empName = employees.find(e => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
-      const tr = document.createElement('tr');
-      tr.classList.add('manager-wage-row');
-      tr.dataset.id = w.id;
-      tr.style.cursor = 'pointer';
-      tr.innerHTML = `
+  const entries = getFilteredWageEntries();
+  tblWageEntriesBody.innerHTML = '';
+  if (!entries.length) {
+    const msg =
+      allWageEntries.length === 0
+        ? 'No wage entries found.'
+        : 'No wage entries match your search or date filters.';
+    tblWageEntriesBody.innerHTML = `<tr><td colspan="14" style="text-align:center;color:#94a3b8;padding:1.5rem;">${msg}</td></tr>`;
+    return;
+  }
+  entries.forEach((w) => {
+    const empName = employees.find((e) => e.id === w.employeeId)?.fullName || w.employeeName || w.employeeId || '—';
+    const tr = document.createElement('tr');
+    tr.classList.add('manager-wage-row');
+    tr.dataset.id = w.id;
+    tr.style.cursor = 'pointer';
+    tr.innerHTML = `
         <td>${escapeHtml(w.date || '—')}</td><td>${escapeHtml(empName)}</td><td>${escapeHtml(w.employeeId || '—')}</td>
         <td>${escapeHtml(w.department || '—')}</td><td>${escapeHtml(w.item || '—')}</td><td>${w.qty || 0}</td>
         <td>${escapeHtml(w.unit || '—')}</td><td>${w.rate || 0}</td><td>${w.ot || 0}</td><td>${w.bonus || 0}</td>
         <td>${w.deduct || 0}</td><td>${w.tax || 0}</td><td><strong style="color:#f59e0b">Rs. ${(w.net || 0).toLocaleString()}</strong></td>
         <td><button class="btn-delete-wage" data-id="${w.id}" data-emp="${escapeHtml(empName)}" data-date="${escapeHtml(w.date || '—')}" data-item="${escapeHtml(w.item || '—')}" data-qty="${w.qty || 0}" data-net="${w.net || 0}" title="Delete">🗑️</button></td>`;
-      tblWageEntriesBody.appendChild(tr);
+    tblWageEntriesBody.appendChild(tr);
+  });
+  tblWageEntriesBody.querySelectorAll('.btn-delete-wage').forEach((btn) => {
+    btn.addEventListener('click', () => openDeleteWageModal(btn));
+  });
+  tblWageEntriesBody.querySelectorAll('tr.manager-wage-row').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target?.closest?.('.btn-delete-wage')) return;
+      const id = row.dataset.id;
+      if (!id) return;
+      openEditWageModalById(id);
     });
-    tblWageEntriesBody.querySelectorAll('.btn-delete-wage').forEach(btn => {
-      btn.addEventListener('click', () => openDeleteWageModal(btn));
-    });
+  });
+}
 
-    // Row click opens edit modal (except delete button)
-    tblWageEntriesBody.querySelectorAll('tr.manager-wage-row').forEach(row => {
-      row.addEventListener('click', (e) => {
-        if (e.target?.closest?.('.btn-delete-wage')) return;
-        const id = row.dataset.id;
-        if (!id) return;
-        openEditWageModalById(id);
-      });
-    });
+async function loadWageEntries() {
+  if (!tblWageEntriesBody) return;
+  try {
+    const snap = await getDocs(collection(db, 'wageEntries'));
+    const entries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    allWageEntries = [...entries];
+    renderWageEntriesTable();
   } catch (err) {
     console.error('Failed to load wage entries:', err);
-    tblWageEntriesBody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#ef4444;">Failed to load wage entries.</td></tr>';
+    tblWageEntriesBody.innerHTML =
+      '<tr><td colspan="14" style="text-align:center;color:#ef4444;">Failed to load wage entries.</td></tr>';
   }
 }
+
+(function initWageEntryFilters() {
+  const search = document.getElementById('wage-search');
+  const btnFilter = document.getElementById('btn-wage-filter');
+  const from = document.getElementById('wage-date-from');
+  const to = document.getElementById('wage-date-to');
+  const rerender = () => renderWageEntriesTable();
+  if (search && !search.dataset.filterBound) {
+    search.dataset.filterBound = '1';
+    search.addEventListener('input', rerender);
+  }
+  if (btnFilter && !btnFilter.dataset.filterBound) {
+    btnFilter.dataset.filterBound = '1';
+    btnFilter.addEventListener('click', rerender);
+  }
+  if (from && !from.dataset.filterBound) {
+    from.dataset.filterBound = '1';
+    from.addEventListener('change', rerender);
+  }
+  if (to && !to.dataset.filterBound) {
+    to.dataset.filterBound = '1';
+    to.addEventListener('change', rerender);
+  }
+})();
 
 // Parse CSV row handling quoted fields and embedded commas
 function parseCSVLine(line) {
